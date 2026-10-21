@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>مستشفى أنوار خيبر</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <div id="login-screen">
+    <form class="login-card" id="login-form">
+      <div class="login-head">
+        <div class="brand-mark">أخ</div>
+        <h1 data-i18n="hospitalName">مستشفى أنوار خيبر</h1>
+      </div>
+      <p data-i18n="loginSubtitle">متابعة الموردين ومسحوبات العيادات</p>
+      <p class="choose-account" data-i18n="chooseAccount">اختر الحساب</p>
+      <div class="user-icons" id="user-icons"></div>
+      <input type="hidden" id="login-user" />
+      <div class="login-pass-box" id="login-pass-box" hidden>
+        <p class="selected-user" id="selected-user-label"></p>
+        <label data-i18n="password">كلمة المرور</label>
+        <input id="login-pass" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password" />
+        <button class="btn btn-primary btn-block" type="submit" data-i18n="login">تسجيل الدخول</button>
+      </div>
+      <button class="btn btn-ghost btn-block" id="login-lang-btn" type="button">English</button>
+    </form>
+  </div>
+
+  <div class="app" id="app">
+    <aside class="sidebar">
+      <div class="logo">
+        <div class="brand-mark">أخ</div>
+        <span data-i18n="hospitalName">مستشفى أنوار خيبر</span>
+      </div>
+      <button class="nav-btn active" data-page="dashboard" data-i18n="dashboard">لوحة التحكم</button>
+      <button class="nav-btn" data-page="withdrawals" data-i18n="withdrawals">مسحوبات العيادات</button>
+      <button class="nav-btn" data-page="supplies" data-i18n="supplies">مستلزمات</button>
+      <button class="nav-btn" data-page="archive" data-i18n="archive">أرشيف</button>
+    </aside>
+
+    <div class="main">
+      <header class="topbar">
+        <div class="user-chip">
+          <div class="avatar" id="user-initial">أ</div>
+          <span id="user-name"></span>
+        </div>
+        <div class="top-actions">
+          <button class="btn btn-ghost" id="lang-btn" type="button">English</button>
+          <button class="btn btn-danger" id="logout-btn" type="button" data-i18n="logout">تسجيل الخروج</button>
+        </div>
+      </header>
+
+      <div class="content">
+        <section class="page active" id="page-dashboard">
+          <h2 class="page-title" data-i18n="dashboard">لوحة التحكم</h2>
+          <div class="reports">
+            <button class="report-btn" data-report="weekly" type="button"><span class="report-icon">📊</span><span data-i18n="weeklyReport">التقرير الأسبوعي</span></button>
+            <button class="report-btn" data-report="monthly" type="button"><span class="report-icon">📈</span><span data-i18n="monthlyReport">التقرير الشهري</span></button>
+            <button class="report-btn" data-report="yearly" type="button"><span class="report-icon">📁</span><span data-i18n="yearlyReport">التقرير السنوي</span></button>
+          </div>
+          <div class="clinic-report-list" id="clinic-report-list" hidden></div>
+        </section>
+
+        <section class="page" id="page-withdrawals">
+          <h2 class="page-title" data-i18n="withdrawals">مسحوبات العيادات</h2>
+          <div class="subnav" id="clinic-subnav"></div>
+          <div id="clinic-pages"></div>
+        </section>
+
+        <section class="page" id="page-supplies">
+          <h2 class="page-title" data-i18n="supplies">مستلزمات</h2>
+          <div class="subnav">
+            <button class="subnav-btn active" type="button" data-sub="medical" data-i18n="medicalSupplies">مستلزمات طبية</button>
+            <button class="subnav-btn" type="button" data-sub="vendors" data-i18n="vendors">الموردون</button>
+            <button class="subnav-btn" type="button" data-sub="diffs" data-i18n="priceDiffs">فروق الأسعار</button>
+          </div>
+
+          <div class="subpage active" id="sub-medical">
+            <div class="card">
+              <h3 data-i18n="addItem">إضافة صنف</h3>
+              <form class="form-grid" data-supply-form="medical">
+                <div><label data-i18n="itemName">اسم الصنف</label><input name="itemName" required /></div>
+                <div><label data-i18n="unitSize">الحجم أو الوحدة</label><input name="unit" required /></div>
+                <div><label data-i18n="itemType">النوع</label><input name="type" required /></div>
+                <div><label data-i18n="vendor">المورد</label><select name="supplierId" class="supplier-select" required></select></div>
+                <div><label data-i18n="price">السعر</label><input name="price" type="number" min="0" step="0.01" required /></div>
+                <div class="full"><button class="btn btn-primary" type="submit" data-i18n="saveItem">حفظ الصنف</button></div>
+              </form>
+            </div>
+            <div class="card table-wrap">
+              <h3 data-i18n="medicalSupplies">مستلزمات طبية</h3>
+              <div id="table-medical"></div>
+            </div>
+          </div>
+
+          <div class="subpage" id="sub-vendors">
+            <div class="card">
+              <h3 data-i18n="addVendor">إضافة مورد</h3>
+              <form class="form-grid" id="vendor-form">
+                <div><label data-i18n="vendorName">اسم المورد</label><input id="v-name" required /></div>
+                <div><label data-i18n="contactPerson">الشخص المسؤول</label><input id="v-contact" required /></div>
+                <div><label data-i18n="phone">رقم الجوال</label><input id="v-phone" required /></div>
+                <div><label data-i18n="emailOptional">البريد الإلكتروني (اختياري)</label><input id="v-email" type="email" /></div>
+                <div class="full"><label data-i18n="vendorNotes">ملاحظات</label><textarea id="v-notes"></textarea></div>
+                <div class="full"><button class="btn btn-primary" type="submit" data-i18n="saveVendor">حفظ المورد</button></div>
+              </form>
+            </div>
+            <div class="card table-wrap">
+              <h3 data-i18n="vendors">الموردون</h3>
+              <div id="table-vendors"></div>
+            </div>
+          </div>
+
+          <div class="subpage" id="sub-diffs">
+            <div id="price-diffs"></div>
+          </div>
+        </section>
+
+        <section class="page" id="page-archive">
+          <h2 class="page-title" data-i18n="archive">أرشيف</h2>
+          <div class="subnav">
+            <button class="subnav-btn active" type="button" data-archive="withdrawals" data-i18n="archiveWithdrawals">ملفات السحوبات</button>
+            <button class="subnav-btn" type="button" data-archive="prices" data-i18n="archivePrices">سجل الأسعار</button>
+            <button class="subnav-btn" type="button" data-archive="charts" data-i18n="archiveCharts">الرسوم البيانية</button>
+          </div>
+          <div class="subpage active" id="archive-withdrawals">
+            <div class="toolbar" style="margin-bottom:12px">
+              <button class="btn btn-navy" type="button" data-print-archive="withdrawals" data-i18n="print">طباعة</button>
+            </div>
+            <div class="card" id="archive-files"></div>
+          </div>
+          <div class="subpage" id="archive-prices">
+            <div class="toolbar" style="margin-bottom:12px">
+              <button class="btn btn-navy" type="button" data-print-archive="prices" data-i18n="print">طباعة</button>
+            </div>
+            <div class="card">
+              <input id="price-search" data-i18n-placeholder="searchItems" placeholder="ابحث عن صنف..." />
+            </div>
+            <div class="card table-wrap" id="archive-prices-print">
+              <div id="archive-prices-table"></div>
+            </div>
+          </div>
+          <div class="subpage" id="archive-charts">
+            <div class="toolbar" style="margin-bottom:12px">
+              <button class="btn btn-navy" type="button" data-print-archive="charts" data-i18n="print">طباعة</button>
+            </div>
+            <div id="archive-charts-print">
+              <div class="card">
+                <h3 data-i18n="chartByVendor">تغيّر الأسعار لكل مورد</h3>
+                <select id="chart-vendor" class="supplier-select"></select>
+                <canvas id="chart-vendor-canvas" height="120"></canvas>
+              </div>
+              <div class="card">
+                <h3 data-i18n="chartCompare">مقارنة أسعار الموردين</h3>
+                <canvas id="chart-compare-canvas" height="120"></canvas>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+    <button class="btn btn-navy settings-btn" id="settings-btn" type="button" title="إعدادات">⚙️ <span data-i18n="settings">إعدادات</span></button>
+  </div>
+
+  <div class="modal-overlay" id="modal">
+    <div class="modal">
+      <div id="modal-body"></div>
+      <button class="btn btn-ghost" id="modal-close" type="button" data-i18n="close">إغلاق</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+  <script type="module" src="/js/app.js"></script>
+</body>
+</html>
