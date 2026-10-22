@@ -9,6 +9,7 @@ import {
   insertVendor,
   insertWithdrawal,
   loadProcurementData,
+  loginUser,
   updateSupply,
   updateVendor,
 } from "./supabaseClient.js";
@@ -16,11 +17,11 @@ import {
 const KEY = "anwar-khaybar-procurement";
 const BACKUP_KEY = "anwar-khaybar-procurement-backup";
 
-const USERS = [
-  { username: "يوسف الجهني", password: "102938", letter: "ي", color: "#0d6e6e" },
-  { username: "احمد الجيزاوي", password: "204857", letter: "أ", color: "#0b2c3d" },
-  { username: "الإدارة", password: "330011", letter: "إ", color: "#c9a227" },
-  { username: "خدمة العملاء", password: "441122", letter: "خ", color: "#1b8a5a" },
+const ACCOUNTS = [
+  { username: "يوسف الجهني", letter: "ي", color: "#0d6e6e" },
+  { username: "احمد الجيزاوي", letter: "أ", color: "#0b2c3d" },
+  { username: "الإدارة", letter: "إ", color: "#c9a227" },
+  { username: "خدمة العملاء", letter: "خ", color: "#1b8a5a" },
 ];
 
 const CLINICS = [
@@ -48,6 +49,8 @@ const I18N = {
     dbSaveError: "تعذر حفظ البيانات في قاعدة البيانات",
     dbLoadError: "تعذر قراءة البيانات من قاعدة البيانات",
     savedReports: "التقارير المحفوظة",
+    saveReport: "حفظ التقرير",
+    reportSaved: "تم حفظ التقرير",
     withdrawals: "مسحوبات العيادات",
     supplies: "مستلزمات",
     archive: "أرشيف",
@@ -70,6 +73,7 @@ const I18N = {
     print: "طباعة",
     savePdf: "حفظ PDF",
     loginError: "بيانات الدخول غير صحيحة",
+    loginServerError: "تعذر التحقق من كلمة المرور. نفّذ ملف sql/secure_login.sql مرة واحدة في Supabase.",
     medicalSupplies: "مستلزمات طبية",
     vendors: "الموردون",
     addItem: "إضافة صنف",
@@ -143,6 +147,8 @@ const I18N = {
     dbSaveError: "Could not save data to the database",
     dbLoadError: "Could not read data from the database",
     savedReports: "Saved reports",
+    saveReport: "Save report",
+    reportSaved: "Report saved",
     withdrawals: "Clinic withdrawals",
     supplies: "Supplies",
     archive: "Archive",
@@ -165,6 +171,7 @@ const I18N = {
     print: "Print",
     savePdf: "Save PDF",
     loginError: "Invalid login details",
+    loginServerError: "Could not verify the password. Run sql/secure_login.sql once in Supabase.",
     medicalSupplies: "Medical supplies",
     vendors: "Suppliers",
     addItem: "Add item",
@@ -431,7 +438,7 @@ function applyI18n() {
 
 function renderLoginIcons() {
   const selected = document.getElementById("login-user").value;
-  document.getElementById("user-icons").innerHTML = USERS.map(
+  document.getElementById("user-icons").innerHTML = ACCOUNTS.map(
     (u) => `<button class="user-tile ${u.username === selected ? "selected" : ""}" type="button" data-user="${u.username}">
       <span class="icon" style="background:${u.color}">${u.letter}</span>
       <small>${u.username}</small>
@@ -536,6 +543,10 @@ async function logPrice(item) {
   if (!Array.isArray(state.priceHistory)) state.priceHistory = [];
   const entry = priceEntryFromItem(item);
   const saved = await insertArchivePrice(entry);
+  if (saved.error || !saved.row) {
+    notifyDbError(saved.error);
+    return;
+  }
   state.priceHistory.unshift(saved.row);
 }
 
@@ -546,6 +557,10 @@ async function syncAllProductsToPriceArchive() {
     const entry = priceEntryFromItem(item);
     if (keys.has(priceArchiveKey(entry))) continue;
     const saved = await insertArchivePrice(entry);
+    if (saved.error || !saved.row) {
+      notifyDbError(saved.error);
+      continue;
+    }
     state.priceHistory.unshift(saved.row);
     keys.add(priceArchiveKey(entry));
     keys.add(priceArchiveKey(saved.row));
@@ -601,6 +616,10 @@ function chartsTabVisible() {
 async function archiveWithdrawal(row) {
   if (!Array.isArray(state.withdrawalArchive)) state.withdrawalArchive = [];
   const saved = await insertArchiveWithdrawal({ ...row, sourceId: row.id });
+  if (saved.error || !saved.row) {
+    notifyDbError(saved.error);
+    return;
+  }
   state.withdrawalArchive.unshift(saved.row);
 }
 
@@ -863,7 +882,7 @@ function showClinicReports(kind) {
   ).join("");
 }
 
-async function showReport(kind, clinicId) {
+function showReport(kind, clinicId) {
   const label = reportLabel(kind);
   const { list } = reportRows(kind);
   const items = list.filter((w) => w.clinicId === clinicId);
@@ -879,7 +898,7 @@ async function showReport(kind, clinicId) {
     </tr>`
   );
   const title = `${t("reportTitle")} ${label} — ${clinicName(clinicId)}`;
-  const saved = await insertReport({
+  const payload = {
     title,
     reportType: kind,
     clinicId,
@@ -891,15 +910,11 @@ async function showReport(kind, clinicId) {
       requester: w.requester,
       amount: Number(w.quantity) * Number(w.unitPrice),
     })),
-  });
-  if (saved.error) notifyDbError(saved.error);
-  else {
-    state.reports.unshift(saved.row);
-    save(state);
-  }
+  };
   openModal(`
     <h2>${title}</h2>
     <div class="toolbar">
+      <button class="btn btn-primary" type="button" id="report-save">${t("saveReport")}</button>
       <button class="btn btn-navy" type="button" id="report-print">${t("print")}</button>
       <button class="btn btn-primary" type="button" id="report-pdf">${t("savePdf")}</button>
     </div>
@@ -911,6 +926,20 @@ async function showReport(kind, clinicId) {
   `);
   document.getElementById("report-print").onclick = () => printHtml(document.getElementById("report-print-area").innerHTML, title);
   document.getElementById("report-pdf").onclick = () => exportReportPdf(kind, title);
+  document.getElementById("report-save").onclick = async () => {
+    const btn = document.getElementById("report-save");
+    if (!btn || btn.disabled) return;
+    btn.disabled = true;
+    const saved = await insertReport(payload);
+    if (saved.error || !saved.row) {
+      btn.disabled = false;
+      notifyDbError(saved.error);
+      return;
+    }
+    state.reports.unshift(saved.row);
+    save(state);
+    btn.textContent = t("reportSaved");
+  };
 }
 
 function printHtml(inner, title) {
@@ -1174,19 +1203,28 @@ document.getElementById("user-icons").addEventListener("click", (e) => {
   if (tile) selectLoginUser(tile.dataset.user);
 });
 
-document.getElementById("login-form").addEventListener("submit", (e) => {
+document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const form = e.currentTarget;
   const user = document.getElementById("login-user").value;
   const pass = document.getElementById("login-pass").value;
-  if (!user) return;
-  const found = USERS.find((u) => u.username === user && u.password === pass);
-  if (found) {
-    state.session = { username: found.username };
-    save(state);
-    startSession();
-  } else {
-    alert(t("loginError"));
+  if (!user || !pass) return;
+  const submitBtn = form.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+  const result = await loginUser(user, pass);
+  if (submitBtn) submitBtn.disabled = false;
+  document.getElementById("login-pass").value = "";
+  if (result.error) {
+    alert(t("loginServerError"));
+    return;
   }
+  if (!result.user) {
+    alert(t("loginError"));
+    return;
+  }
+  state.session = { username: result.user.username };
+  save(state);
+  startSession();
 });
 
 document.getElementById("logout-btn").addEventListener("click", () => {
@@ -1333,6 +1371,10 @@ document.getElementById("vendor-form").addEventListener("submit", async (e) => {
     notes: document.getElementById("v-notes").value.trim(),
   };
   const result = await insertVendor(vendor);
+  if (result.error || !result.row) {
+    notifyDbError(result.error);
+    return;
+  }
   state.suppliers.unshift(result.row);
   e.target.reset();
   persist();
@@ -1442,9 +1484,18 @@ async function pushList(rows, insertFn) {
   const uploaded = [];
   for (const row of rows) {
     const result = await insertFn(row);
-    uploaded.push(result.row || row);
+    if (result.error || !result.row) {
+      return { rows: uploaded.concat(rows.slice(uploaded.length)), error: result.error || t("dbSaveError") };
+    }
+    uploaded.push(result.row);
   }
-  return uploaded;
+  return { rows: uploaded, error: null };
+}
+
+async function uploadLocalRows(rows, insertFn) {
+  const pushed = await pushList(rows, insertFn);
+  if (pushed.error) notifyDbError(pushed.error);
+  return pushed.rows;
 }
 
 async function hydrateFromDatabase() {
@@ -1465,7 +1516,7 @@ async function hydrateFromDatabase() {
     });
     state.supplyItems = [...byId.values()];
   } else if (state.supplyItems.length) {
-    state.supplyItems = await pushList(
+    state.supplyItems = await uploadLocalRows(
       state.supplyItems.filter((row) => !state.deletedSupplyIds.includes(String(row.id))),
       (item) => insertSupply(item, state.suppliers)
     );
@@ -1478,7 +1529,7 @@ async function hydrateFromDatabase() {
     });
     state.withdrawals = [...byId.values()];
   } else if (state.withdrawals.length) {
-    state.withdrawals = await pushList(
+    state.withdrawals = await uploadLocalRows(
       state.withdrawals.filter((row) => !state.deletedWithdrawalIds.includes(String(row.id))),
       insertWithdrawal
     );
@@ -1494,7 +1545,7 @@ async function hydrateFromDatabase() {
     });
     state.withdrawalArchive = [...byId.values()];
   } else if ((state.withdrawalArchive || []).length) {
-    state.withdrawalArchive = await pushList(state.withdrawalArchive, insertArchiveWithdrawal);
+    state.withdrawalArchive = await uploadLocalRows(state.withdrawalArchive, insertArchiveWithdrawal);
   }
 
   const cloudArchiveP = result.archivePrices || [];
@@ -1505,7 +1556,7 @@ async function hydrateFromDatabase() {
     });
     state.priceHistory = [...byId.values()];
   } else if ((state.priceHistory || []).length) {
-    state.priceHistory = await pushList(state.priceHistory, insertArchivePrice);
+    state.priceHistory = await uploadLocalRows(state.priceHistory, insertArchivePrice);
   }
   await syncAllProductsToPriceArchive();
 
@@ -1520,7 +1571,7 @@ async function hydrateFromDatabase() {
     });
     state.suppliers = [...byId.values()];
   } else if (state.suppliers.length) {
-    state.suppliers = await pushList(state.suppliers, insertVendor);
+    state.suppliers = await uploadLocalRows(state.suppliers, insertVendor);
   }
 
   save(state);

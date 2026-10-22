@@ -172,9 +172,9 @@ function legacyWithdrawalPayload(row) {
   };
 }
 
-function localRowId() {
-  if (globalThis.crypto?.randomUUID) return crypto.randomUUID();
-  return "00000000-0000-4000-8000-" + Math.random().toString(16).slice(2, 14).padEnd(12, "0");
+function errorText(error) {
+  if (!error) return "save failed";
+  return error.message || String(error);
 }
 
 async function insertWithFallback(table, payloads) {
@@ -212,20 +212,8 @@ export async function fetchSupplies() {
 export async function insertSupply(item, suppliers) {
   const base = supplyPayload(item, suppliers);
   const { data, error } = await insertWithFallback("supplies", [base]);
-  if (data) return { row: mapSupplyRow(data), error: null };
-  return {
-    row: {
-      id: item.id || localRowId(),
-      category: item.category || "medical",
-      itemName: item.itemName,
-      unit: item.unit,
-      type: item.type || "",
-      supplierId: item.supplierId || "",
-      price: Number(item.price) || 0,
-      updatedAt: item.updatedAt || dateOnly(new Date().toISOString()),
-    },
-    error: null,
-  };
+  if (!data) return { row: null, error: errorText(error) };
+  return { row: mapSupplyRow(data), error: null };
 }
 
 export async function updateSupply(item, suppliers) {
@@ -259,23 +247,11 @@ export async function fetchWithdrawals() {
 
 export async function insertWithdrawal(row) {
   const table = WITHDRAWAL_TABLES[row.clinicId] || WITHDRAWAL_TABLES.ahmed;
-  const { data } = await insertWithFallback(table, [withdrawalPayload(row)]);
-  if (data) return { row: mapWithdrawalRow(data, row.clinicId), error: null };
+  const primary = await insertWithFallback(table, [withdrawalPayload(row)]);
+  if (primary.data) return { row: mapWithdrawalRow(primary.data, row.clinicId), error: null };
   const legacy = await insertWithFallback("doctor_withdrawals", [legacyWithdrawalPayload(row)]);
   if (legacy.data) return { row: mapWithdrawalRow(legacy.data, row.clinicId), error: null };
-  return {
-    row: {
-      id: row.id || localRowId(),
-      clinicId: row.clinicId,
-      productId: row.productId || "",
-      productName: row.productName || "",
-      date: row.date,
-      quantity: Number(row.quantity) || 0,
-      requester: row.requester || "",
-      unitPrice: Number(row.unitPrice) || 0,
-    },
-    error: null,
-  };
+  return { row: null, error: errorText(legacy.error || primary.error) };
 }
 
 export async function deleteWithdrawal(id, clinicId) {
@@ -306,20 +282,9 @@ export async function fetchReports() {
 }
 
 export async function insertReport(report) {
-  const { data } = await insertWithFallback("reports", [reportPayload(report)]);
-  if (data) return { row: mapReportRow(data), error: null };
-  return {
-    row: {
-      id: report.id || localRowId(),
-      title: report.title,
-      reportType: report.reportType || report.kind,
-      clinicId: report.clinicId || "",
-      total: Number(report.total) || 0,
-      items: report.items || [],
-      createdAt: dateOnly(new Date().toISOString()),
-    },
-    error: null,
-  };
+  const { data, error } = await insertWithFallback("reports", [reportPayload(report)]);
+  if (!data) return { row: null, error: errorText(error) };
+  return { row: mapReportRow(data), error: null };
 }
 
 export function mapArchiveWithdrawalRow(row) {
@@ -367,9 +332,9 @@ export async function insertArchiveWithdrawal(row) {
     unit_price: Number(row.unitPrice) || 0,
     source_id: String(row.sourceId || row.id || ""),
   };
-  const { data } = await insertWithFallback("archive_withdrawals", [payload]);
-  if (data) return { row: mapArchiveWithdrawalRow(data), error: null };
-  return { row: { ...row, id: row.id || localRowId() }, error: null };
+  const { data, error } = await insertWithFallback("archive_withdrawals", [payload]);
+  if (!data) return { row: null, error: errorText(error) };
+  return { row: mapArchiveWithdrawalRow(data), error: null };
 }
 
 export async function fetchArchivePrices() {
@@ -389,9 +354,9 @@ export async function insertArchivePrice(row) {
     price: Number(row.price) || 0,
     recorded_date: row.date,
   };
-  const { data } = await insertWithFallback("archive_prices", [payload]);
-  if (data) return { row: mapArchivePriceRow(data), error: null };
-  return { row: { ...row, id: row.id || localRowId() }, error: null };
+  const { data, error } = await insertWithFallback("archive_prices", [payload]);
+  if (!data) return { row: null, error: errorText(error) };
+  return { row: mapArchivePriceRow(data), error: null };
 }
 
 export async function fetchVendors() {
@@ -403,19 +368,9 @@ export async function fetchVendors() {
 }
 
 export async function insertVendor(vendor) {
-  const { data } = await insertWithFallback("vendors", [vendorPayload(vendor)]);
-  if (data) return { row: mapVendorRow(data), error: null };
-  return {
-    row: {
-      id: vendor.id || localRowId(),
-      name: vendor.name || "",
-      contact: vendor.contact || "",
-      phone: vendor.phone || "",
-      email: vendor.email || "",
-      notes: vendor.notes || "",
-    },
-    error: null,
-  };
+  const { data, error } = await insertWithFallback("vendors", [vendorPayload(vendor)]);
+  if (!data) return { row: null, error: errorText(error) };
+  return { row: mapVendorRow(data), error: null };
 }
 
 export async function updateVendor(vendor) {
@@ -444,6 +399,20 @@ export async function fetchHospitalData() {
     datasets.push({ table, rows: data || [], error: error ? error.message : null });
   }
   return { connection, tables, datasets };
+}
+
+export async function loginUser(username, password) {
+  const { data, error } = await supabase.rpc("login_app_user", {
+    p_username: username,
+    p_password: password,
+  });
+  if (error) return { user: null, error: error.message };
+  const row = Array.isArray(data) ? data[0] : null;
+  if (!row?.username) return { user: null, error: null };
+  return {
+    user: { username: row.username, letter: row.letter || "", color: row.color || "" },
+    error: null,
+  };
 }
 
 export async function loadProcurementData() {
