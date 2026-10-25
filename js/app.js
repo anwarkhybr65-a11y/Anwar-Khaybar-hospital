@@ -18,7 +18,9 @@ import {
   loadProcurementData,
   loginUser,
   manageAppUser,
+  deleteExternalSupply,
   saveClinicStock,
+  saveExternalSupply,
   saveSupplyRequest,
   updateSupply,
   updateVendor,
@@ -178,6 +180,9 @@ const I18N = {
     clinicStocks: "مخزون العيادات",
     myClinicStock: "مخزون العيادة",
     externalRequests: "طلبات خارجية",
+    externalSupplies: "المستلزمات الخارجية",
+    externalSuppliesHint: "أصناف هذه الصفحة هي التي تظهر عند إنشاء طلب خارجي.",
+    noExternalProducts: "لا توجد مستلزمات خارجية. أضفها من صفحة المستلزمات الخارجية.",
     internalRequests: "طلبات داخلية",
     disposeRequest: "طلب إتلاف",
     returnRequest: "إعادة إلى المستودع",
@@ -370,6 +375,9 @@ const I18N = {
     clinicStocks: "Clinic inventory",
     myClinicStock: "Clinic inventory",
     externalRequests: "External requests",
+    externalSupplies: "External supplies",
+    externalSuppliesHint: "Items on this page are the ones available for an external request.",
+    noExternalProducts: "There are no external supplies yet. Add them on the external supplies page.",
     internalRequests: "Internal requests",
     disposeRequest: "Disposal request",
     returnRequest: "Return to warehouse",
@@ -457,6 +465,7 @@ function seed() {
     clinicNames: {},
     requests: [],
     clinicStock: [],
+    externalSupplies: [],
   };
 }
 
@@ -607,6 +616,7 @@ function load() {
   if (!data.clinicNames || typeof data.clinicNames !== "object") data.clinicNames = {};
   if (!Array.isArray(data.requests)) data.requests = [];
   if (!Array.isArray(data.clinicStock)) data.clinicStock = [];
+  if (!Array.isArray(data.externalSupplies)) data.externalSupplies = [];
   recoverMissing(data);
   restoreSuppliers(data);
   save(data);
@@ -1960,6 +1970,13 @@ function requestChoices(kind) {
         max: Number(row.quantity) || 1,
       }));
   }
+  if (kind === "external") {
+    return (state.externalSupplies || []).map((item) => ({
+      value: item.id,
+      label: `${item.itemName}${item.unit ? ` — ${item.unit}` : ""}`,
+      max: "",
+    }));
+  }
   return state.supplyItems
     .filter(isDental)
     .filter((item) => {
@@ -2007,6 +2024,10 @@ function renderRequests() {
     .map(([kind, key]) => `<button class="subnav-btn ${requestTab === kind ? "active" : ""}" type="button" data-request-tab="${kind}">${t(key)}</button>`)
     .join("");
   const choices = isStaff() ? requestChoices(requestTab) : [];
+  const emptyText = requestTab === "external" ? t("noExternalProducts") : t("noRequestProducts");
+  const externalLink = requestTab === "external"
+    ? `<p><button class="btn btn-navy" type="button" data-open-page="external">${t("externalSupplies")}</button></p>`
+    : "";
   const form = isStaff()
     ? `<div class="card"><h3>${t("sendRequest")}</h3>
         ${choices.length ? `<form class="form-grid" data-request-form>
@@ -2014,7 +2035,7 @@ function renderRequests() {
           <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
           <div class="full"><label>${t("requestNote")}</label><input name="note" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("sendRequest")}</button></div>
-        </form>` : `<p class="empty">${t("noRequestProducts")}</p>`}
+        </form>` : `<p class="empty">${emptyText}</p>`}
       </div>`
     : "";
   const list = (state.requests || []).filter((row) => row.kind === requestTab && (!isStaff() || row.clinicId === sessionClinic()));
@@ -2041,7 +2062,7 @@ function renderRequests() {
       <td>${requestActions(row)}</td>
     </tr>`;
   });
-  panel.innerHTML = `${form}<div class="card table-wrap"><h3>${requestKindLabel(requestTab)}</h3>${table(headers, rows)}</div>`;
+  panel.innerHTML = `${externalLink}${form}<div class="card table-wrap"><h3>${requestKindLabel(requestTab)}</h3>${table(headers, rows)}</div>`;
 }
 
 async function persistRequest(req) {
@@ -2106,6 +2127,11 @@ async function submitRequest(form) {
     productId = stock.productId;
     productName = stock.productName;
     expiryDate = stock.expiryDate || "";
+  } else if (requestTab === "external") {
+    const product = (state.externalSupplies || []).find((item) => String(item.id) === String(itemId));
+    if (!product) return;
+    productId = product.id;
+    productName = product.itemName;
   } else {
     const product = state.supplyItems.find((item) => String(item.id) === String(itemId));
     if (!product) return;
@@ -2145,8 +2171,9 @@ async function acceptRequest(id) {
   if (!req || !isManager() || req.status !== "pending" || req.applied) return;
   if (!confirm(t("confirmAccept"))) return;
   const qty = Number(req.quantity) || 0;
+  const externalItem = (state.externalSupplies || []).find((item) => String(item.id) === String(req.productId));
   const product = state.supplyItems.find((item) => String(item.id) === String(req.productId));
-  const meta = { productName: req.productName, unit: product?.unit || "" };
+  const meta = { productName: req.productName, unit: (req.kind === "external" ? externalItem?.unit : product?.unit) || "" };
   const expiry = req.expiryDate || product?.expiryDate || "";
   if (req.kind === "internal") {
     if (!product) {
@@ -2323,6 +2350,80 @@ function userAdminHtml() {
     </form>`;
 }
 
+function renderExternalSupplies() {
+  const panel = document.getElementById("external-supply-panel");
+  if (!panel) return;
+  const items = state.externalSupplies || [];
+  const supplierOptions = `<option value="">${t("selectVendor")}</option>` + state.suppliers.map((supplier) => `<option value="${escapeAttr(supplier.id)}">${escapeAttr(supplier.name)}</option>`).join("");
+  const form = isManager()
+    ? `<div class="card"><h3>${t("addItem")}</h3>
+        <form class="form-grid" id="external-supply-form">
+          <div><label>${t("itemName")}</label><input name="itemName" required /></div>
+          <div><label>${t("unitSize")}</label><input name="unit" required /></div>
+          <div><label>${t("itemType")}</label><input name="type" required /></div>
+          <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
+          <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
+          <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
+        </form>
+      </div>`
+    : "";
+  const headers = canSeePrices()
+    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), ""]
+    : [t("itemName"), t("unitSize"), t("itemType")];
+  const rows = items.map((item) => {
+    const supplier = item.supplierName || supplierById(item.supplierId)?.name || "";
+    if (!canSeePrices()) {
+      return `<tr><td>${escapeAttr(item.itemName)}</td><td>${escapeAttr(item.unit)}</td><td>${escapeAttr(item.type)}</td></tr>`;
+    }
+    return `<tr>
+      <td>${escapeAttr(item.itemName)}</td>
+      <td>${escapeAttr(item.unit)}</td>
+      <td>${escapeAttr(item.type)}</td>
+      <td>${escapeAttr(supplier)}</td>
+      <td>${Number(item.price) || 0} ${t("currency")}</td>
+      <td><button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button></td>
+    </tr>`;
+  });
+  panel.innerHTML = `${form}<div class="card table-wrap"><h3>${t("externalSupplies")}</h3>${table(headers, rows)}</div>`;
+}
+
+async function addExternalSupply(form) {
+  if (!isManager()) return;
+  const data = new FormData(form);
+  const supplierId = String(data.get("supplierId") || "");
+  const row = {
+    id: crypto.randomUUID(),
+    itemName: String(data.get("itemName") || "").trim(),
+    unit: String(data.get("unit") || "").trim(),
+    type: String(data.get("type") || "").trim(),
+    supplierId,
+    supplierName: supplierById(supplierId)?.name || "",
+    price: Number(data.get("price")) || 0,
+  };
+  if (!row.itemName) return;
+  const saved = await saveExternalSupply(row);
+  if (saved.error) {
+    notifyDbError(saved.error);
+    return;
+  }
+  if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
+  state.externalSupplies.unshift(saved.row || row);
+  persist();
+}
+
+async function removeExternalSupply(id) {
+  if (!isManager()) return;
+  const item = (state.externalSupplies || []).find((row) => String(row.id) === String(id));
+  if (!item || !confirm(t("confirmDeleteItem"))) return;
+  const result = await deleteExternalSupply(item.id);
+  if (result.error) {
+    notifyDbError(result.error);
+    return;
+  }
+  state.externalSupplies = state.externalSupplies.filter((row) => String(row.id) !== String(id));
+  persist();
+}
+
 function renderAll() {
   applyI18n();
   fillSelects();
@@ -2331,6 +2432,7 @@ function renderAll() {
   renderArchive();
   renderRequests();
   renderClinicStock();
+  renderExternalSupplies();
 }
 
 document.getElementById("login-form").addEventListener("submit", async (e) => {
@@ -2584,7 +2686,24 @@ document.querySelectorAll("[data-report]").forEach((btn) => {
   });
 });
 
+document.getElementById("page-external").addEventListener("submit", async (e) => {
+  if (e.target.id !== "external-supply-form") return;
+  e.preventDefault();
+  await addExternalSupply(e.target);
+});
+
+document.getElementById("page-external").addEventListener("click", async (e) => {
+  const button = e.target.closest("[data-del-external]");
+  if (!button) return;
+  await removeExternalSupply(button.dataset.delExternal);
+});
+
 document.getElementById("page-requests").addEventListener("click", async (e) => {
+  const openBtn = e.target.closest("[data-open-page]");
+  if (openBtn) {
+    openPage(openBtn.dataset.openPage);
+    return;
+  }
   const tab = e.target.closest("[data-request-tab]");
   if (tab) {
     requestTab = tab.dataset.requestTab;
@@ -3108,6 +3227,11 @@ async function hydrateFromDatabase() {
   const stockCloud = result.clinicInventory;
   if (stockCloud && !stockCloud.missing && !stockCloud.error) {
     state.clinicStock = await mergeRemoteRows(state.clinicStock, stockCloud.rows || [], saveClinicStock);
+  }
+  if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
+  const externalCloud = result.externalSupplies;
+  if (externalCloud && !externalCloud.missing && !externalCloud.error) {
+    state.externalSupplies = await mergeRemoteRows(state.externalSupplies, externalCloud.rows || [], saveExternalSupply);
   }
 
   const cloudVendors = result.vendors || [];

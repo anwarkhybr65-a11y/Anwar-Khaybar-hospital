@@ -33,6 +33,7 @@
         <span data-i18n="sidebarTitle">متابعة الموردين ومسحوبات عيادات الأسنان</span>
       </div>
       <button class="nav-btn active" data-page="dashboard" data-i18n="dashboard">لوحة التحكم</button>
+      <button class="nav-btn" data-page="external" data-i18n="externalSupplies">المستلزمات الخارجية</button>
       <button class="nav-btn" data-page="supplies" data-manager-only data-i18n="dentalSupplies">مستلزمات الأسنان</button>
       <button class="nav-btn" data-page="emergency" data-manager-only data-i18n="emergencySupplies">مستلزمات الطوارئ</button>
       <button class="nav-btn" data-page="archive" data-manager-only data-i18n="archive">أرشيف</button>
@@ -93,6 +94,12 @@
           <h2 class="page-title" data-i18n="warehouse">المستودع</h2>
           <p class="empty" data-i18n="warehouseHint">كميات مستلزمات الأسنان المتاحة. أي سحب من العيادات يخصم من هذه الكمية.</p>
           <div class="card table-wrap" id="warehouse-table"></div>
+        </section>
+
+        <section class="page" id="page-external">
+          <h2 class="page-title" data-i18n="externalSupplies">المستلزمات الخارجية</h2>
+          <p class="empty" data-i18n="externalSuppliesHint">أصناف هذه الصفحة هي التي تظهر عند إنشاء طلب خارجي.</p>
+          <div id="external-supply-panel"></div>
         </section>
 
         <section class="page" id="page-supplies">

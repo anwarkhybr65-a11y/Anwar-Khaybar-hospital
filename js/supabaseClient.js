@@ -793,6 +793,45 @@ export async function saveClinicStock(row) {
   return saveUuidRow("clinic_inventory", row, clinicStockPayload(row), mapClinicStock);
 }
 
+export function mapExternalSupply(row) {
+  return {
+    id: row.id,
+    itemName: row.item_name || "",
+    unit: row.unit || "",
+    type: row.item_type || "",
+    supplierId: row.supplier_id || "",
+    supplierName: row.supplier_name || "",
+    price: Number(row.price) || 0,
+  };
+}
+
+function externalSupplyPayload(row) {
+  return {
+    item_name: row.itemName || "",
+    unit: row.unit || "",
+    item_type: row.type || "",
+    supplier_id: String(row.supplierId || ""),
+    supplier_name: row.supplierName || "",
+    price: Number(row.price) || 0,
+  };
+}
+
+export async function fetchExternalSupplies() {
+  return fetchOptional("external_supplies", mapExternalSupply, { column: "item_name", ascending: true });
+}
+
+export async function saveExternalSupply(row) {
+  return saveUuidRow("external_supplies", row, externalSupplyPayload(row), mapExternalSupply);
+}
+
+export async function deleteExternalSupply(id) {
+  if (!isUuid(id)) return { error: null, missing: false };
+  const { error } = await supabase.from("external_supplies").delete().eq("id", id);
+  if (error && missingTable(error)) return { error: null, missing: true };
+  if (error) return { error: error.message, missing: false };
+  return { error: null, missing: false };
+}
+
 export async function loginUser(username, password) {
   const { data, error } = await supabase.rpc("login_app_user", {
     p_username: username,
@@ -844,7 +883,7 @@ export async function loadProcurementData() {
       error: connection.message,
     };
   }
-  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames, supplyRequests, clinicInventory] =
+  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames, supplyRequests, clinicInventory, externalSupplies] =
     await Promise.all([
       fetchSupplies(),
       fetchWithdrawals(),
@@ -859,6 +898,7 @@ export async function loadProcurementData() {
       fetchClinicNames(),
       fetchSupplyRequests(),
       fetchClinicInventory(),
+      fetchExternalSupplies(),
     ]);
   const error =
     supplies.error ||
@@ -887,6 +927,7 @@ export async function loadProcurementData() {
     clinicNames,
     supplyRequests,
     clinicInventory,
+    externalSupplies,
     error,
   };
 }
