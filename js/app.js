@@ -127,6 +127,7 @@ const I18N = {
     actExternalAdd: "إضافة مستلزم خارجي",
     actExternalDelete: "حذف مستلزم خارجي",
     actClinicNames: "تغيير أسماء العيادات",
+    actClinicStockAdd: "إضافة صنف لمخزون العيادة",
     actUserCreate: "إنشاء حساب",
     actUserBan: "حظر حساب",
     actUserUnban: "إلغاء حظر حساب",
@@ -209,6 +210,7 @@ const I18N = {
     requests: "الطلبات",
     clinicStocks: "مخزون العيادات",
     myClinicStock: "مخزون العيادة",
+    addClinicItem: "إضافة صنف موجود في العيادة",
     externalRequests: "طلبات خارجية",
     externalSupplies: "المستلزمات الخارجية",
     externalSuppliesHint: "أصناف هذه الصفحة هي التي تظهر عند إنشاء طلب خارجي.",
@@ -351,6 +353,7 @@ const I18N = {
     actExternalAdd: "Add external supply",
     actExternalDelete: "Delete external supply",
     actClinicNames: "Change clinic names",
+    actClinicStockAdd: "Add a clinic inventory item",
     actUserCreate: "Create account",
     actUserBan: "Ban account",
     actUserUnban: "Unban account",
@@ -433,6 +436,7 @@ const I18N = {
     requests: "Requests",
     clinicStocks: "Clinic inventory",
     myClinicStock: "Clinic inventory",
+    addClinicItem: "Add an item already in the clinic",
     externalRequests: "External requests",
     externalSupplies: "External supplies",
     externalSuppliesHint: "Items on this page are the ones available for an external request.",
@@ -1945,6 +1949,7 @@ function activityActionLabel(action) {
     external_add: "actExternalAdd",
     external_delete: "actExternalDelete",
     clinic_names: "actClinicNames",
+    clinic_stock_add: "actClinicStockAdd",
     user_create: "actUserCreate",
     user_ban: "actUserBan",
     user_unban: "actUserUnban",
@@ -2110,6 +2115,16 @@ function renderClinicStock() {
     const alerts = rows.flatMap(clinicAlertLines);
     panel.innerHTML = `
       ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
+      <div class="card">
+        <h3>${t("addClinicItem")}</h3>
+        <form class="form-grid" id="clinic-stock-form">
+          <div><label>${t("itemName")}</label><input name="itemName" required /></div>
+          <div><label>${t("unitSize")}</label><input name="unit" required /></div>
+          <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+          <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
+          <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
+        </form>
+      </div>
       <div class="card table-wrap"><h3>${escapeAttr(clinicName(sessionClinic()))}</h3>${rows.length ? clinicTable(rows) : `<p class="empty">${t("noData")}</p>`}</div>`;
     renderStaffAlerts();
     return;
@@ -2125,6 +2140,36 @@ function renderClinicStock() {
     </div>`;
   }).join("");
   renderStaffAlerts();
+}
+
+async function addClinicStockItem(form) {
+  if (!isStaff() || !sessionClinic()) return;
+  const data = new FormData(form);
+  const productName = String(data.get("itemName") || "").trim();
+  const unit = String(data.get("unit") || "").trim();
+  const quantity = Number(data.get("quantity"));
+  const expiryDate = String(data.get("expiryDate") || "");
+  if (!productName || !unit || !Number.isFinite(quantity) || quantity < 1) return;
+  const clinicId = sessionClinic();
+  const catalog = (state.supplyItems || []).find((item) => itemNameKey(item.itemName) === itemNameKey(productName));
+  const existing = (state.clinicStock || []).find(
+    (row) => row.clinicId === clinicId && itemNameKey(row.productName) === itemNameKey(productName) && (row.expiryDate || "") === expiryDate
+  );
+  const productId = existing?.productId || catalog?.id || crypto.randomUUID();
+  const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, { productName, unit: existing?.unit || unit });
+  if (!added) return;
+  const row = (state.clinicStock || []).find(
+    (item) => item.clinicId === clinicId && String(item.productId) === String(productId) && (item.expiryDate || "") === expiryDate
+  );
+  if (row) {
+    row.productName = productName;
+    row.unit = unit;
+    const saved = await saveClinicStock(row);
+    if (saved?.row) Object.assign(row, saved.row, { productName, unit, quantity: row.quantity, expiryDate });
+  }
+  await recordActivity("clinic_stock_add", `${clinicName(clinicId)} — ${productName} — ${quantity}`);
+  form.reset();
+  persist();
 }
 
 function requestChoices(kind) {
@@ -2932,6 +2977,12 @@ document.getElementById("page-requests").addEventListener("submit", async (e) =>
   if (!form) return;
   e.preventDefault();
   await submitRequest(form);
+});
+
+document.getElementById("page-clinic-stock").addEventListener("submit", async (e) => {
+  if (e.target.id !== "clinic-stock-form") return;
+  e.preventDefault();
+  await addClinicStockItem(e.target);
 });
 
 document.getElementById("clinic-report-list").addEventListener("click", (e) => {
