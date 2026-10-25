@@ -125,6 +125,7 @@ const I18N = {
     actStockSave: "تحديث كمية المستودع",
     actDispose: "إتلاف",
     actExternalAdd: "إضافة مستلزم خارجي",
+    actExternalUpdate: "تحديث كمية المستلزم الخارجي",
     actExternalDelete: "حذف مستلزم خارجي",
     actClinicNames: "تغيير أسماء العيادات",
     actClinicStockAdd: "إضافة صنف لمخزون العيادة",
@@ -351,6 +352,7 @@ const I18N = {
     actStockSave: "Update warehouse quantity",
     actDispose: "Dispose",
     actExternalAdd: "Add external supply",
+    actExternalUpdate: "Update external supply quantity",
     actExternalDelete: "Delete external supply",
     actClinicNames: "Change clinic names",
     actClinicStockAdd: "Add a clinic inventory item",
@@ -1947,6 +1949,7 @@ function activityActionLabel(action) {
     stock_save: "actStockSave",
     dispose: "actDispose",
     external_add: "actExternalAdd",
+    external_update: "actExternalUpdate",
     external_delete: "actExternalDelete",
     clinic_names: "actClinicNames",
     clinic_stock_add: "actClinicStockAdd",
@@ -2582,8 +2585,6 @@ function renderExternalSupplies() {
           <div><label>${t("itemType")}</label><input name="type" required /></div>
           <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
           <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
-          <div><label>${t("quantity")}</label><input name="stock" type="number" min="0" step="1" required /></div>
-          <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
       </div>`
@@ -2602,9 +2603,12 @@ function renderExternalSupplies() {
       <td>${escapeAttr(item.type)}</td>
       <td>${escapeAttr(supplier)}</td>
       <td>${Number(item.price) || 0} ${t("currency")}</td>
-      <td>${Number(item.stock) || 0}</td>
-      <td>${escapeAttr(item.expiryDate || t("noExpiry"))}</td>
-      <td><button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button></td>
+      <td><input data-external-stock type="number" min="0" step="1" value="${Number(item.stock) || 0}" style="max-width:110px" /></td>
+      <td><input data-external-expiry type="date" value="${escapeAttr(item.expiryDate || "")}" /></td>
+      <td>
+        <button class="btn btn-sm btn-primary" type="button" data-save-external="${escapeAttr(item.id)}">${t("saveStock")}</button>
+        <button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
+      </td>
     </tr>`;
   });
   panel.innerHTML = `${form}<div class="card table-wrap"><h3>${t("externalSupplies")}</h3>${table(headers, rows)}</div>`;
@@ -2622,8 +2626,8 @@ async function addExternalSupply(form) {
     supplierId,
     supplierName: supplierById(supplierId)?.name || "",
     price: Number(data.get("price")) || 0,
-    stock: Number(data.get("stock")) || 0,
-    expiryDate: String(data.get("expiryDate") || ""),
+    stock: 0,
+    expiryDate: "",
   };
   if (!row.itemName) return;
   const saved = await saveExternalSupply(row);
@@ -2634,6 +2638,25 @@ async function addExternalSupply(form) {
   if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
   state.externalSupplies.unshift(saved.row || row);
   await recordActivity("external_add", row.itemName);
+  persist();
+}
+
+async function saveExternalSupplyDetails(id) {
+  if (!isManager()) return;
+  const item = (state.externalSupplies || []).find((row) => String(row.id) === String(id));
+  const row = document.querySelector(`[data-save-external="${CSS.escape(String(id))}"]`)?.closest("tr");
+  if (!item || !row) return;
+  const stock = Number(row.querySelector("[data-external-stock]")?.value);
+  if (!Number.isFinite(stock) || stock < 0) return;
+  item.stock = stock;
+  item.expiryDate = row.querySelector("[data-external-expiry]")?.value || "";
+  const saved = await saveExternalSupply(item);
+  if (saved.error) {
+    notifyDbError(saved.error);
+    return;
+  }
+  if (saved.row) Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate });
+  await recordActivity("external_update", `${item.itemName} — ${item.stock}${item.expiryDate ? ` — ${item.expiryDate}` : ""}`);
   persist();
 }
 
@@ -2924,6 +2947,11 @@ document.getElementById("page-external").addEventListener("submit", async (e) =>
 });
 
 document.getElementById("page-external").addEventListener("click", async (e) => {
+  const saveBtn = e.target.closest("[data-save-external]");
+  if (saveBtn) {
+    await saveExternalSupplyDetails(saveBtn.dataset.saveExternal);
+    return;
+  }
   const button = e.target.closest("[data-del-external]");
   if (!button) return;
   await removeExternalSupply(button.dataset.delExternal);
