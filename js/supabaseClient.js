@@ -549,6 +549,14 @@ export async function fetchArchivePrices() {
   return { rows: (data || []).map(mapArchivePriceRow), error: null };
 }
 
+export async function deleteArchivePrice(id) {
+  const key = String(id || "");
+  if (!key || !isUuid(key)) return { error: null };
+  const { error } = await supabase.from("archive_prices").delete().eq("id", key);
+  if (error && !missingTable(error) && !ignorableWriteError(error.message)) return { error: error.message };
+  return { error: null };
+}
+
 export async function insertArchivePrice(row) {
   const payload = {
     item_id: String(row.itemId || ""),

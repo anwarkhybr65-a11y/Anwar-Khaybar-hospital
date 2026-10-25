@@ -1,4 +1,5 @@
 import {
+  deleteArchivePrice,
   deleteArchiveWithdrawal,
   deleteSupply,
   deleteVendor,
@@ -113,6 +114,7 @@ const I18N = {
     confirmDeleteWithdrawal: "هل تريد حذف هذا المسحوب؟",
     confirmDeleteArchive: "هل تريد حذف هذا السجل من أرشيف السحوبات؟",
     confirmDeleteArchiveFile: "هل تريد حذف كل سجلات هذا الملف من الأرشيف؟",
+    confirmDeletePrice: "هل تريد حذف هذا السجل من سجل الأسعار؟",
     deleteVendor: "حذف",
     vendorNotes: "ملاحظات",
     selectVendor: "اختر المورد",
@@ -225,6 +227,7 @@ const I18N = {
     confirmDeleteWithdrawal: "Delete this withdrawal?",
     confirmDeleteArchive: "Delete this record from the withdrawal archive?",
     confirmDeleteArchiveFile: "Delete every record in this archive file?",
+    confirmDeletePrice: "Delete this record from the price log?",
     deleteVendor: "Delete",
     vendorNotes: "Notes",
     selectVendor: "Select supplier",
@@ -428,6 +431,8 @@ function load() {
   if (!Array.isArray(data.deletedWithdrawalIds)) data.deletedWithdrawalIds = [];
   if (!Array.isArray(data.deletedSupplyIds)) data.deletedSupplyIds = [];
   if (!Array.isArray(data.deletedArchiveWithdrawalIds)) data.deletedArchiveWithdrawalIds = [];
+  if (!Array.isArray(data.deletedArchivePriceIds)) data.deletedArchivePriceIds = [];
+  if (!Array.isArray(data.deletedArchivePriceKeys)) data.deletedArchivePriceKeys = [];
   recoverMissing(data);
   restoreSuppliers(data);
   save(data);
@@ -619,6 +624,7 @@ async function syncAllProductsToPriceArchive() {
   for (const item of state.supplyItems || []) {
     const entry = priceEntryFromItem(item);
     if (keys.has(priceArchiveKey(entry))) continue;
+    if ((state.deletedArchivePriceKeys || []).includes(priceArchiveKey(entry))) continue;
     const saved = await insertArchivePrice(entry);
     if (saved.error || !saved.row) {
       notifyDbError(saved.error);
@@ -1257,7 +1263,7 @@ function renderArchivePrices() {
     .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
     .filter((p) => !q || (p.itemName || "").toLowerCase().includes(q) || (p.type || "").toLowerCase().includes(q));
   document.getElementById("archive-prices-table").innerHTML = table(
-    [t("itemName"), t("itemType"), t("unitSize"), t("vendor"), t("price"), t("date")],
+    [t("itemName"), t("itemType"), t("unitSize"), t("vendor"), t("price"), t("date"), ""],
     list.map(
       (p) => `<tr>
         <td>${p.itemName}</td>
@@ -1266,6 +1272,7 @@ function renderArchivePrices() {
         <td>${supplierById(p.supplierId)?.name || p.supplierName || ""}</td>
         <td>${p.price} ${t("currency")}</td>
         <td>${p.date}</td>
+        <td class="archive-delete-col"><button class="btn btn-sm btn-danger" type="button" data-del-price="${escapeAttr(p.id)}">${t("deleteVendor")}</button></td>
       </tr>`
     )
   );
@@ -1515,7 +1522,27 @@ document.getElementById("archive-files").addEventListener("click", async (e) => 
   }
 });
 
-document.getElementById("page-archive").addEventListener("click", (e) => {
+document.getElementById("page-archive").addEventListener("click", async (e) => {
+  const priceDelete = e.target.closest("[data-del-price]");
+  if (priceDelete) {
+    if (!confirm(t("confirmDeletePrice"))) return;
+    const row = (state.priceHistory || []).find((item) => String(item.id) === String(priceDelete.dataset.delPrice));
+    if (!row) return;
+    const result = await deleteArchivePrice(row.id);
+    if (result.error) {
+      notifyDbError(result.error);
+      return;
+    }
+    if (!Array.isArray(state.deletedArchivePriceIds)) state.deletedArchivePriceIds = [];
+    if (!Array.isArray(state.deletedArchivePriceKeys)) state.deletedArchivePriceKeys = [];
+    const id = String(row.id);
+    if (id && !state.deletedArchivePriceIds.includes(id)) state.deletedArchivePriceIds.push(id);
+    const key = priceArchiveKey(row);
+    if (!state.deletedArchivePriceKeys.includes(key)) state.deletedArchivePriceKeys.push(key);
+    state.priceHistory = state.priceHistory.filter((item) => String(item.id) !== id);
+    persist();
+    return;
+  }
   const printBtn = e.target.closest("[data-print-archive]");
   if (printBtn) printArchive(printBtn.dataset.printArchive);
 });
@@ -1868,15 +1895,20 @@ async function hydrateFromDatabase() {
     state.withdrawalArchive = [];
   }
 
-  const cloudArchiveP = result.archivePrices || [];
+  if (!Array.isArray(state.deletedArchivePriceIds)) state.deletedArchivePriceIds = [];
+  for (const id of state.deletedArchivePriceIds) await deleteArchivePrice(id);
+  const keptPrice = (row) => !state.deletedArchivePriceIds.includes(String(row.id));
+  const cloudArchiveP = (result.archivePrices || []).filter(keptPrice);
   if (cloudArchiveP.length) {
     const byId = new Map(cloudArchiveP.map((row) => [String(row.id), row]));
-    (state.priceHistory || []).forEach((row) => {
+    (state.priceHistory || []).filter(keptPrice).forEach((row) => {
       if (!byId.has(String(row.id))) byId.set(String(row.id), row);
     });
     state.priceHistory = [...byId.values()];
-  } else if ((state.priceHistory || []).length) {
-    state.priceHistory = await uploadLocalRows(state.priceHistory, insertArchivePrice);
+  } else if ((state.priceHistory || []).some(keptPrice)) {
+    state.priceHistory = await uploadLocalRows(state.priceHistory.filter(keptPrice), insertArchivePrice);
+  } else {
+    state.priceHistory = [];
   }
   await syncAllProductsToPriceArchive();
 
@@ -1918,7 +1950,9 @@ function printArchive(kind) {
   }
   if (kind === "prices") {
     const box = document.getElementById("archive-prices-print");
-    printHtml(box ? box.innerHTML : "", t("archivePrices"));
+    const clone = box ? box.cloneNode(true) : null;
+    clone?.querySelectorAll(".archive-delete-col").forEach((el) => el.remove());
+    printHtml(clone ? clone.innerHTML : "", t("archivePrices"));
     return;
   }
   const vendorCanvas = document.getElementById("chart-vendor-canvas");
