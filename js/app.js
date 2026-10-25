@@ -763,7 +763,7 @@ function applyAccess() {
   }
 }
 
-const MANAGER_PAGES = new Set(["supplies", "emergency", "archive", "warehouse"]);
+const MANAGER_PAGES = new Set(["supplies", "emergency", "archive", "warehouse", "external"]);
 
 function openPage(page) {
   if (state.session && isStaff() && MANAGER_PAGES.has(page)) page = "dashboard";
@@ -2196,7 +2196,7 @@ function renderRequests() {
     .join("");
   const choices = isStaff() ? requestChoices(requestTab) : [];
   const emptyText = requestTab === "external" ? t("noExternalProducts") : t("noRequestProducts");
-  const externalLink = requestTab === "external"
+  const externalLink = requestTab === "external" && isManager()
     ? `<p><button class="btn btn-navy" type="button" data-open-page="external">${t("externalSupplies")}</button></p>`
     : "";
   const form = isStaff()
