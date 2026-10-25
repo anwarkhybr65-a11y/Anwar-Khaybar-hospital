@@ -27,29 +27,31 @@ body {
 button, input, select, textarea { font-family: inherit; }
 
 #login-screen {
-  min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   display: flex;
   justify-content: center;
-  align-items: safe center;
-  padding: 20px 20px 48px;
+  align-items: center;
+  padding: 24px;
   overflow-y: auto;
-  background:
-    radial-gradient(circle at 10% 20%, #1a5f6b 0, transparent 40%),
-    linear-gradient(160deg, #0b2c3d, #0d6e6e);
+  background: linear-gradient(180deg, #0b2c3d 0%, #0d6e6e 100%);
 }
 
 .login-card {
-  width: min(480px, 100%);
+  width: min(440px, 100%);
+  margin: auto;
   background: var(--surface);
   border-radius: 24px;
-  padding: 24px 24px 20px;
+  padding: 28px 24px 22px;
   box-shadow: var(--shadow);
   flex-shrink: 0;
+  text-align: center;
 }
 .choose-account {
   font-weight: 700;
   color: var(--ink) !important;
-  margin: 0 0 12px !important;
+  margin: 4px 0 12px !important;
+  text-align: center;
 }
 .user-icons {
   display: grid;
@@ -84,21 +86,24 @@ button, input, select, textarea { font-family: inherit; }
 .login-pass-box { margin-top: 4px; }
 .selected-user { font-weight: 700; margin: 4px 0 0; color: var(--teal); }
 
-.brand-mark {
-  width: 56px;
-  height: 56px;
-  border-radius: 16px;
-  display: grid;
-  place-items: center;
-  background: var(--navy);
-  color: #fff;
-  font-weight: 700;
-  margin-inline-end: 12px;
+.hospital-logo {
+  width: min(280px, 100%);
+  height: auto;
+  display: block;
 }
 
-.login-head { display: flex; align-items: center; margin-bottom: 8px; }
+.login-head {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  margin-bottom: 8px;
+}
 .login-head h1 { margin: 0; font-size: 1.25rem; }
-.login-card p { color: var(--muted); margin: 0 0 10px; }
+.login-card p { color: var(--muted); margin: 0 0 10px; text-align: center; }
+.login-card label,
+.login-card .selected-user { text-align: start; }
 .hint { font-size: 0.85rem; background: #f3f8f8; padding: 10px 12px; border-radius: 10px; margin-bottom: 16px; }
 
 label { display: block; font-weight: 600; margin: 12px 0 6px; }
@@ -139,8 +144,19 @@ textarea { min-height: 84px; resize: vertical; }
   flex-direction: column;
   gap: 8px;
 }
-.sidebar .logo { display: flex; align-items: center; gap: 10px; margin-bottom: 18px; }
-.sidebar .logo span { font-weight: 800; }
+.sidebar .logo {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 18px;
+  text-align: start;
+}
+.sidebar .hospital-logo {
+  width: 74px;
+  flex: 0 0 auto;
+}
+.sidebar .logo span { font-weight: 800; line-height: 1.35; font-size: 0.92rem; }
 .nav-btn {
   text-align: start;
   background: transparent;
@@ -263,8 +279,18 @@ textarea { min-height: 84px; resize: vertical; }
   padding: 14px 10px;
   cursor: pointer;
   font-weight: 700;
+  color: var(--ink);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
 }
-.report-btn:hover { border-color: var(--teal); color: var(--teal); }
+.report-btn:hover { border-color: var(--teal); color: var(--teal); transform: translateY(-2px); }
+.report-btn.active {
+  background: var(--navy);
+  color: #fff;
+  border-color: var(--navy);
+  transform: scale(1.04);
+  box-shadow: 0 10px 24px rgba(11, 44, 61, 0.18);
+}
+.report-btn.active:hover { color: #fff; }
 .report-icon { font-size: 1.4rem; display: block; margin-bottom: 6px; }
 .clinic-report-list {
   display: flex;
@@ -407,7 +433,19 @@ th { color: var(--muted); font-size: 0.85rem; }
 .confirm-box h2 { margin-bottom: 6px; }
 .confirm-box p { color: var(--muted); margin: 0 0 8px; }
 
-.empty { color: var(--muted); padding: 12px 0; }
+.stock-alert {
+  background: #fff6e8;
+  border: 1px solid #f0d7a2;
+  border-inline-start: 5px solid #c47a12;
+  border-radius: 16px;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  color: #6d4a08;
+}
+.stock-alert strong { display: block; margin-bottom: 8px; }
+.stock-alert ul { margin: 0; padding-inline-start: 18px; }
+.stock-alert li { margin: 4px 0; }
+.stock-low { color: #b42318; font-weight: 800; }
 
 #archive-charts canvas {
   width: 100% !important;
@@ -418,4 +456,5 @@ th { color: var(--muted); font-size: 0.85rem; }
   .stats, .grid-2, .form-grid, .reports, .record-grid { grid-template-columns: 1fr; }
   .app.visible { grid-template-columns: 1fr; }
   .sidebar { flex-direction: row; flex-wrap: wrap; }
+  .sidebar .logo { flex: 1 1 100%; justify-content: center; }
 }

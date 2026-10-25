@@ -78,6 +78,7 @@ export function mapSupplyRow(row) {
     supplierId: row.supplier_id || extra.supplierId || "",
     supplierName: extra.supplierName || "",
     price: Number(row.price ?? extra.price) || 0,
+    stock: extra.stock == null || extra.stock === "" ? null : Number(extra.stock),
     updatedAt: dateOnly(row.updated_at || extra.updatedAt || row.created_at),
   };
 }
@@ -141,6 +142,7 @@ function supplyPayload(item, suppliers = []) {
       supplierId: item.supplierId || "",
       supplierName: vendor?.name || "",
       price: Number(item.price) || 0,
+      stock: item.stock == null || item.stock === "" ? null : Number(item.stock),
       updatedAt: item.updatedAt || dateOnly(new Date().toISOString()),
     }),
   };
@@ -177,6 +179,117 @@ function errorText(error) {
   return error.message || String(error);
 }
 
+function missingTable(error) {
+  const msg = error?.message || "";
+  const code = error?.code || "";
+  return code === "PGRST205" || code === "42P01" || /schema cache|does not exist|could not find the table/i.test(msg);
+}
+
+function dentalPayload(item, suppliers = []) {
+  const vendor = suppliers.find((s) => s.id === item.supplierId);
+  return {
+    item_name: item.itemName || "",
+    unit: item.unit || "",
+    item_type: item.type || "",
+    supplier_id: String(item.supplierId || ""),
+    supplier_name: vendor?.name || item.supplierName || "",
+    price: Number(item.price) || 0,
+    stock: item.stock == null || item.stock === "" ? null : Number(item.stock),
+    updated_at: new Date().toISOString(),
+  };
+}
+
+function emergencyPayload(item, suppliers = []) {
+  const vendor = suppliers.find((s) => s.id === item.supplierId);
+  const payload = dentalPayload(item, suppliers);
+  delete payload.stock;
+  payload.supplier_name = vendor?.name || item.supplierName || "";
+  return payload;
+}
+
+export function mapDentalRow(row) {
+  return {
+    id: row.id,
+    sourceId: row.source_id || "",
+    category: "dental",
+    itemName: row.item_name || "",
+    unit: row.unit || "",
+    type: row.item_type || "",
+    supplierId: row.supplier_id || "",
+    supplierName: row.supplier_name || "",
+    price: Number(row.price) || 0,
+    stock: row.stock == null || row.stock === "" ? null : Number(row.stock),
+    updatedAt: dateOnly(row.updated_at || row.created_at),
+  };
+}
+
+export function mapEmergencyRow(row) {
+  return {
+    ...mapDentalRow(row),
+    category: "emergency",
+    stock: null,
+  };
+}
+
+export function mapWithdrawalLogRow(row) {
+  return {
+    id: row.id,
+    sourceId: row.source_id || "",
+    clinicId: row.clinic_id || "",
+    productId: row.product_id || "",
+    productName: row.product_name || "",
+    date: dateOnly(row.withdrawal_date),
+    quantity: Number(row.quantity) || 0,
+    requester: row.requester || "",
+    unitPrice: Number(row.unit_price) || 0,
+    affectsStock: row.affects_stock === true,
+  };
+}
+
+async function fetchOptional(table, mapFn, order) {
+  let query = supabase.from(table).select("*");
+  if (order) query = query.order(order.column, { ascending: order.ascending });
+  const { data, error } = await query;
+  if (error && missingTable(error)) return { rows: [], missing: true, error: null };
+  if (error) return { rows: [], missing: false, error: error.message };
+  return { rows: (data || []).map(mapFn), missing: false, error: null };
+}
+
+async function findInventoryRow(table, id) {
+  const key = String(id || "");
+  if (!key) return { row: null, missing: false, error: null };
+  if (isUuid(key)) {
+    const byId = await supabase.from(table).select("*").eq("id", key).maybeSingle();
+    if (byId.error && missingTable(byId.error)) return { row: null, missing: true, error: null };
+    if (byId.error) return { row: null, missing: false, error: byId.error.message };
+    if (byId.data) return { row: byId.data, missing: false, error: null };
+  }
+  const bySource = await supabase.from(table).select("*").eq("source_id", key).maybeSingle();
+  if (bySource.error && missingTable(bySource.error)) return { row: null, missing: true, error: null };
+  if (bySource.error) return { row: null, missing: false, error: bySource.error.message };
+  return { row: bySource.data || null, missing: false, error: null };
+}
+
+async function saveInventoryItem(table, item, suppliers, mapFn, payloadFn) {
+  const found = await findInventoryRow(table, item.id);
+  if (found.missing) return { row: null, error: null, missing: true };
+  if (found.error) return { row: null, error: found.error, missing: false };
+  const payload = payloadFn(item, suppliers);
+  if (found.row) {
+    const { data, error } = await supabase.from(table).update(payload).eq("id", found.row.id).select().single();
+    if (error) return { row: null, error: errorText(error), missing: false };
+    return { row: mapFn(data), error: null, missing: false };
+  }
+  const { data, error } = await supabase
+    .from(table)
+    .insert({ ...payload, source_id: item.id ? String(item.id) : null })
+    .select()
+    .single();
+  if (error && missingTable(error)) return { row: null, error: null, missing: true };
+  if (error || !data) return { row: null, error: errorText(error), missing: false };
+  return { row: mapFn(data), error: null, missing: false };
+}
+
 async function insertWithFallback(table, payloads) {
   let lastError = null;
   for (const payload of payloads) {
@@ -210,6 +323,11 @@ export async function fetchSupplies() {
 }
 
 export async function insertSupply(item, suppliers) {
+  const table = item?.category === "emergency" ? "emergency_supplies" : "dental_warehouse";
+  const mapFn = item?.category === "emergency" ? mapEmergencyRow : mapDentalRow;
+  const payloadFn = item?.category === "emergency" ? emergencyPayload : dentalPayload;
+  const saved = await saveInventoryItem(table, item, suppliers, mapFn, payloadFn);
+  if (!saved.missing) return { row: saved.row, error: saved.error };
   const base = supplyPayload(item, suppliers);
   const { data, error } = await insertWithFallback("supplies", [base]);
   if (!data) return { row: null, error: errorText(error) };
@@ -217,17 +335,90 @@ export async function insertSupply(item, suppliers) {
 }
 
 export async function updateSupply(item, suppliers) {
+  const table = item?.category === "emergency" ? "emergency_supplies" : "dental_warehouse";
+  const mapFn = item?.category === "emergency" ? mapEmergencyRow : mapDentalRow;
+  const payloadFn = item?.category === "emergency" ? emergencyPayload : dentalPayload;
+  const saved = await saveInventoryItem(table, item, suppliers, mapFn, payloadFn);
+  if (!saved.missing) return { row: saved.row, error: saved.error };
+  if (!isUuid(item.id)) return { row: { ...item }, error: null };
   const { data, error } = await supabase.from("supplies").update(supplyPayload(item, suppliers)).eq("id", item.id).select().single();
   if (error) return { row: null, error: error.message };
   return { row: mapSupplyRow(data), error: null };
 }
 
+async function deleteFromTable(table, id) {
+  const key = String(id || "");
+  if (!key) return { deleted: false, missing: false, error: null };
+  let removed = false;
+  if (isUuid(key)) {
+    const byId = await supabase.from(table).delete().eq("id", key).select("id");
+    if (byId.error && missingTable(byId.error)) return { deleted: false, missing: true, error: null };
+    if (byId.error && !ignorableWriteError(byId.error.message)) return { deleted: false, missing: false, error: byId.error.message };
+    if (byId.data?.length) removed = true;
+  }
+  const bySource = await supabase.from(table).delete().eq("source_id", key).select("id");
+  if (bySource.error && missingTable(bySource.error)) return { deleted: removed, missing: !removed, error: null };
+  if (bySource.error && !ignorableWriteError(bySource.error.message)) return { deleted: removed, missing: false, error: bySource.error.message };
+  if (bySource.data?.length) removed = true;
+  return { deleted: removed, missing: false, error: null };
+}
+
 export async function deleteSupply(id) {
+  const dental = await deleteFromTable("dental_warehouse", id);
+  if (dental.error) return { error: dental.error };
+  const emergency = await deleteFromTable("emergency_supplies", id);
+  if (emergency.error) return { error: emergency.error };
   if (!isUuid(id)) return { error: null };
   const { error } = await supabase.from("supplies").delete().eq("id", id);
-  if (!error) return { error: null };
-  if (ignorableWriteError(error.message)) return { error: null };
+  if (!error || ignorableWriteError(error.message)) return { error: null };
   return { error: error.message };
+}
+
+export async function fetchDentalWarehouse() {
+  return fetchOptional("dental_warehouse", mapDentalRow, { column: "item_name", ascending: true });
+}
+
+export async function fetchEmergencySupplies() {
+  return fetchOptional("emergency_supplies", mapEmergencyRow, { column: "item_name", ascending: true });
+}
+
+export async function fetchWithdrawalLog() {
+  return fetchOptional("withdrawal_log", mapWithdrawalLogRow, { column: "withdrawal_date", ascending: false });
+}
+
+export async function fetchDentalStock(productId) {
+  const found = await findInventoryRow("dental_warehouse", productId);
+  if (found.missing) return { found: false, missing: true, stock: null };
+  if (!found.row) return { found: false, missing: false, stock: null };
+  return {
+    found: true,
+    missing: false,
+    stock: found.row.stock == null || found.row.stock === "" ? null : Number(found.row.stock),
+  };
+}
+
+export async function insertWithdrawalLog(row) {
+  const payload = {
+    clinic_id: row.clinicId || "",
+    product_id: String(row.productId || ""),
+    product_name: row.productName || "",
+    withdrawal_date: row.date,
+    quantity: Number(row.quantity) || 0,
+    requester: row.requester || "",
+    unit_price: Number(row.unitPrice) || 0,
+    affects_stock: row.affectsStock === true,
+    source_id: row.sourceId ? String(row.sourceId) : null,
+  };
+  const { data, error } = await supabase.from("withdrawal_log").insert(payload).select().single();
+  if (error && missingTable(error)) return { row: null, error: null, missing: true, stock: null };
+  if (error || !data) return { row: null, error: errorText(error), missing: false, stock: null };
+  const stock = payload.affects_stock ? await fetchDentalStock(payload.product_id) : null;
+  return {
+    row: mapWithdrawalLogRow(data),
+    error: null,
+    missing: false,
+    stock: stock?.found ? stock.stock : null,
+  };
 }
 
 export async function fetchWithdrawals() {
@@ -256,6 +447,9 @@ export async function insertWithdrawal(row) {
 
 export async function deleteWithdrawal(id, clinicId) {
   if (!id) return { error: null };
+  const fromLog = await deleteFromTable("withdrawal_log", id);
+  if (fromLog.error) return { error: fromLog.error, fromLog: false };
+  if (fromLog.deleted) return { error: null, fromLog: true };
   const preferred = WITHDRAWAL_TABLES[clinicId];
   const tables = preferred
     ? [preferred, ...Object.values(WITHDRAWAL_TABLES).filter((name) => name !== preferred), "doctor_withdrawals"]
@@ -429,16 +623,28 @@ export async function loadProcurementData() {
       error: connection.message,
     };
   }
-  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices] = await Promise.all([
-    fetchSupplies(),
-    fetchWithdrawals(),
-    fetchReports(),
-    fetchVendors(),
-    fetchArchiveWithdrawals(),
-    fetchArchivePrices(),
-  ]);
+  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog] =
+    await Promise.all([
+      fetchSupplies(),
+      fetchWithdrawals(),
+      fetchReports(),
+      fetchVendors(),
+      fetchArchiveWithdrawals(),
+      fetchArchivePrices(),
+      fetchDentalWarehouse(),
+      fetchEmergencySupplies(),
+      fetchWithdrawalLog(),
+    ]);
   const error =
-    supplies.error || withdrawals.error || reports.error || vendors.error || archiveWithdrawals.error || archivePrices.error;
+    supplies.error ||
+    withdrawals.error ||
+    reports.error ||
+    vendors.error ||
+    archiveWithdrawals.error ||
+    archivePrices.error ||
+    dentalWarehouse.error ||
+    emergencySupplies.error ||
+    withdrawalLog.error;
   return {
     connection,
     supplies: supplies.rows,
@@ -447,6 +653,9 @@ export async function loadProcurementData() {
     vendors: vendors.rows,
     archiveWithdrawals: archiveWithdrawals.rows,
     archivePrices: archivePrices.rows,
+    dentalWarehouse,
+    emergencySupplies,
+    withdrawalLog,
     error,
   };
 }

@@ -4,6 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>مستشفى أنوار خيبر</title>
+  <link rel="icon" type="image/png" href="/img/logo.png" />
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;600;700;800&display=swap" rel="stylesheet" />
@@ -13,8 +14,7 @@
   <div id="login-screen">
     <form class="login-card" id="login-form">
       <div class="login-head">
-        <div class="brand-mark">أخ</div>
-        <h1 data-i18n="hospitalName">مستشفى أنوار خيبر</h1>
+        <img class="hospital-logo" src="/img/mark.png?v=1" alt="شعار AX" />
       </div>
       <p data-i18n="loginSubtitle">متابعة الموردين ومسحوبات العيادات</p>
       <p class="choose-account" data-i18n="chooseAccount">اختر الحساب</p>
@@ -33,12 +33,14 @@
   <div class="app" id="app">
     <aside class="sidebar">
       <div class="logo">
-        <div class="brand-mark">أخ</div>
-        <span data-i18n="hospitalName">مستشفى أنوار خيبر</span>
+        <img class="hospital-logo" src="/img/mark.png?v=1" alt="شعار AX" />
+        <span data-i18n="sidebarTitle">متابعة الموردين ومسحوبات عيادات الأسنان</span>
       </div>
       <button class="nav-btn active" data-page="dashboard" data-i18n="dashboard">لوحة التحكم</button>
+      <button class="nav-btn" data-page="warehouse" data-i18n="warehouse">المستودع</button>
       <button class="nav-btn" data-page="withdrawals" data-i18n="withdrawals">مسحوبات العيادات</button>
-      <button class="nav-btn" data-page="supplies" data-i18n="supplies">مستلزمات</button>
+      <button class="nav-btn" data-page="supplies" data-i18n="dentalSupplies">مستلزمات الأسنان</button>
+      <button class="nav-btn" data-page="emergency" data-i18n="emergencySupplies">مستلزمات الطوارئ</button>
       <button class="nav-btn" data-page="archive" data-i18n="archive">أرشيف</button>
     </aside>
 
@@ -57,6 +59,7 @@
       <div class="content">
         <section class="page active" id="page-dashboard">
           <h2 class="page-title" data-i18n="dashboard">لوحة التحكم</h2>
+          <div id="stock-alerts" hidden></div>
           <div class="reports">
             <button class="report-btn" data-report="weekly" type="button"><span class="report-icon">📊</span><span data-i18n="weeklyReport">التقرير الأسبوعي</span></button>
             <button class="report-btn" data-report="monthly" type="button"><span class="report-icon">📈</span><span data-i18n="monthlyReport">التقرير الشهري</span></button>
@@ -71,29 +74,36 @@
           <div id="clinic-pages"></div>
         </section>
 
+        <section class="page" id="page-warehouse">
+          <h2 class="page-title" data-i18n="warehouse">المستودع</h2>
+          <p class="empty" data-i18n="warehouseHint">كميات مستلزمات الأسنان المتاحة. أي سحب من العيادات يخصم من هذه الكمية.</p>
+          <div class="card table-wrap" id="warehouse-table"></div>
+        </section>
+
         <section class="page" id="page-supplies">
-          <h2 class="page-title" data-i18n="supplies">مستلزمات</h2>
+          <h2 class="page-title" data-i18n="dentalSupplies">مستلزمات الأسنان</h2>
           <div class="subnav">
-            <button class="subnav-btn active" type="button" data-sub="medical" data-i18n="medicalSupplies">مستلزمات طبية</button>
+            <button class="subnav-btn active" type="button" data-sub="dental" data-i18n="dentalSupplies">مستلزمات الأسنان</button>
             <button class="subnav-btn" type="button" data-sub="vendors" data-i18n="vendors">الموردون</button>
             <button class="subnav-btn" type="button" data-sub="diffs" data-i18n="priceDiffs">فروق الأسعار</button>
           </div>
 
-          <div class="subpage active" id="sub-medical">
+          <div class="subpage active" id="sub-dental">
             <div class="card">
               <h3 data-i18n="addItem">إضافة صنف</h3>
-              <form class="form-grid" data-supply-form="medical">
+              <form class="form-grid" data-supply-form="dental">
                 <div><label data-i18n="itemName">اسم الصنف</label><input name="itemName" required /></div>
                 <div><label data-i18n="unitSize">الحجم أو الوحدة</label><input name="unit" required /></div>
                 <div><label data-i18n="itemType">النوع</label><input name="type" required /></div>
                 <div><label data-i18n="vendor">المورد</label><select name="supplierId" class="supplier-select" required></select></div>
                 <div><label data-i18n="price">السعر</label><input name="price" type="number" min="0" step="0.01" required /></div>
+                <div><label data-i18n="stockQty">الكمية في المستودع (علب)</label><input name="stock" type="number" min="0" step="1" required /></div>
                 <div class="full"><button class="btn btn-primary" type="submit" data-i18n="saveItem">حفظ الصنف</button></div>
               </form>
             </div>
             <div class="card table-wrap">
-              <h3 data-i18n="medicalSupplies">مستلزمات طبية</h3>
-              <div id="table-medical"></div>
+              <h3 data-i18n="dentalSupplies">مستلزمات الأسنان</h3>
+              <div id="table-dental"></div>
             </div>
           </div>
 
@@ -117,6 +127,25 @@
 
           <div class="subpage" id="sub-diffs">
             <div id="price-diffs"></div>
+          </div>
+        </section>
+
+        <section class="page" id="page-emergency">
+          <h2 class="page-title" data-i18n="emergencySupplies">مستلزمات الطوارئ</h2>
+          <div class="card">
+            <h3 data-i18n="addItem">إضافة صنف</h3>
+            <form class="form-grid" data-supply-form="emergency">
+              <div><label data-i18n="itemName">اسم الصنف</label><input name="itemName" required /></div>
+              <div><label data-i18n="unitSize">الحجم أو الوحدة</label><input name="unit" required /></div>
+              <div><label data-i18n="itemType">النوع</label><input name="type" required /></div>
+              <div><label data-i18n="vendor">المورد</label><select name="supplierId" class="supplier-select" required></select></div>
+              <div><label data-i18n="price">السعر</label><input name="price" type="number" min="0" step="0.01" required /></div>
+              <div class="full"><button class="btn btn-primary" type="submit" data-i18n="saveItem">حفظ الصنف</button></div>
+            </form>
+          </div>
+          <div class="card table-wrap">
+            <h3 data-i18n="emergencySupplies">مستلزمات الطوارئ</h3>
+            <div id="table-emergency"></div>
           </div>
         </section>
 

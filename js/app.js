@@ -2,12 +2,14 @@ import {
   deleteSupply,
   deleteVendor,
   deleteWithdrawal,
+  fetchDentalStock,
   insertArchivePrice,
   insertArchiveWithdrawal,
   insertReport,
   insertSupply,
   insertVendor,
   insertWithdrawal,
+  insertWithdrawalLog,
   loadProcurementData,
   loginUser,
   updateSupply,
@@ -33,6 +35,7 @@ const CLINICS = [
 const I18N = {
   ar: {
     hospitalName: "مستشفى أنوار خيبر",
+    sidebarTitle: "متابعة الموردين ومسحوبات عيادات الأسنان",
     loginSubtitle: "متابعة الموردين ومسحوبات العيادات",
     chooseAccount: "اختر الحساب",
     username: "اسم المستخدم",
@@ -53,6 +56,17 @@ const I18N = {
     reportSaved: "تم حفظ التقرير",
     withdrawals: "مسحوبات العيادات",
     supplies: "مستلزمات",
+    dentalSupplies: "مستلزمات الأسنان",
+    emergencySupplies: "مستلزمات الطوارئ",
+    warehouse: "المستودع",
+    warehouseHint: "كميات مستلزمات الأسنان المتاحة. أي سحب من العيادات يخصم من هذه الكمية.",
+    stockQty: "الكمية في المستودع (علب)",
+    boxes: "علب",
+    saveStock: "حفظ الكمية",
+    lowStockTitle: "تنبيه: منتجات على وشك النفاد",
+    lowStockItem: "الكمية المتبقية من {name} هي {qty} علب، والمنتج على وشك النفاد.",
+    insufficientStock: "الكمية المتاحة في المستودع لا تكفي لهذا السحب.",
+    stockRequired: "حدّد الكمية المتاحة في المستودع قبل تسجيل السحب.",
     archive: "أرشيف",
     archiveWithdrawals: "ملفات السحوبات",
     archivePrices: "سجل الأسعار",
@@ -74,7 +88,7 @@ const I18N = {
     savePdf: "حفظ PDF",
     loginError: "بيانات الدخول غير صحيحة",
     loginServerError: "تعذر التحقق من كلمة المرور. نفّذ ملف sql/secure_login.sql مرة واحدة في Supabase.",
-    medicalSupplies: "مستلزمات طبية",
+    medicalSupplies: "مستلزمات الأسنان",
     vendors: "الموردون",
     addItem: "إضافة صنف",
     saveItem: "حفظ الصنف",
@@ -131,6 +145,7 @@ const I18N = {
   },
   en: {
     hospitalName: "Anwar Khaybar Hospital",
+    sidebarTitle: "Suppliers and dental clinic withdrawals",
     loginSubtitle: "Suppliers and clinic withdrawals tracking",
     chooseAccount: "Choose an account",
     username: "Username",
@@ -151,6 +166,17 @@ const I18N = {
     reportSaved: "Report saved",
     withdrawals: "Clinic withdrawals",
     supplies: "Supplies",
+    dentalSupplies: "Dental supplies",
+    emergencySupplies: "Emergency supplies",
+    warehouse: "Warehouse",
+    warehouseHint: "Available dental supply quantities. Clinic withdrawals are deducted from this stock.",
+    stockQty: "Warehouse quantity (boxes)",
+    boxes: "boxes",
+    saveStock: "Save quantity",
+    lowStockTitle: "Alert: items are running low",
+    lowStockItem: "{name} has {qty} boxes left and is about to run out.",
+    insufficientStock: "The warehouse does not have enough of this item for the withdrawal.",
+    stockRequired: "Set the available warehouse quantity before recording a withdrawal.",
     archive: "Archive",
     archiveWithdrawals: "Withdrawal files",
     archivePrices: "Price history",
@@ -172,7 +198,7 @@ const I18N = {
     savePdf: "Save PDF",
     loginError: "Invalid login details",
     loginServerError: "Could not verify the password. Run sql/secure_login.sql once in Supabase.",
-    medicalSupplies: "Medical supplies",
+    medicalSupplies: "Dental supplies",
     vendors: "Suppliers",
     addItem: "Add item",
     saveItem: "Save item",
@@ -259,22 +285,14 @@ function seed() {
 function defaultCatalog() {
   const t = todayISO();
   return [
-    { id: "si1", category: "medical", itemName: "شاش طبي معقم", unit: "عبوة 50", type: "ضمادات", supplierId: "", price: 18, updatedAt: t },
-    { id: "si1b", category: "medical", itemName: "شاش طبي معقم", unit: "عبوة 50", type: "ضمادات", supplierId: "", price: 22, updatedAt: t },
-    { id: "si2", category: "medical", itemName: "محاقن 5 مل", unit: "علبة 100", type: "مستهلكات", supplierId: "", price: 32, updatedAt: t },
-    { id: "si2b", category: "medical", itemName: "محاقن 5 مل", unit: "علبة 100", type: "مستهلكات", supplierId: "", price: 29, updatedAt: t },
-    { id: "si3", category: "medical", itemName: "قفازات لاتكس", unit: "علبة 100", type: "وقاية", supplierId: "", price: 34, updatedAt: t },
-    { id: "si3b", category: "medical", itemName: "قفازات لاتكس", unit: "علبة 100", type: "وقاية", supplierId: "", price: 28, updatedAt: t },
-    { id: "si4", category: "medical", itemName: "كمامات طبية", unit: "علبة 50", type: "وقاية", supplierId: "", price: 16, updatedAt: t },
+   
   ];
 }
 
 function defaultWithdrawals() {
   const t = todayISO();
   return [
-    { id: "w1", clinicId: "ahmed", productName: "قفازات لاتكس", date: t, quantity: 2, requester: "ممرض العيادة", unitPrice: 28 },
-    { id: "w2", clinicId: "faten", productName: "شاش طبي معقم", date: t, quantity: 4, requester: "دكتورة فاتن", unitPrice: 18 },
-    { id: "w3", clinicId: "sara", productName: "محاقن 5 مل", date: t, quantity: 1, requester: "دكتورة سارة", unitPrice: 29 },
+    
   ];
 }
 
@@ -477,8 +495,31 @@ function itemPrice(item) {
   return Number(item.price != null ? item.price : item.bestPrice) || 0;
 }
 
-function bestOffer(name) {
-  const same = state.supplyItems.filter((i) => itemNameKey(i.itemName) === itemNameKey(name));
+function isEmergency(item) {
+  return item?.category === "emergency";
+}
+
+function isDental(item) {
+  return Boolean(item) && !isEmergency(item);
+}
+
+function trackedStock(item) {
+  if (!item || item.stock == null || item.stock === "") return null;
+  const value = Number(item.stock);
+  return Number.isFinite(value) ? value : null;
+}
+
+function lowStockItems() {
+  return state.supplyItems.filter((item) => {
+    if (!isDental(item)) return false;
+    const stock = trackedStock(item);
+    return stock != null && stock < 6;
+  });
+}
+
+function bestOffer(name, item) {
+  const pool = item && isEmergency(item) ? state.supplyItems.filter(isEmergency) : state.supplyItems.filter(isDental);
+  const same = pool.filter((i) => itemNameKey(i.itemName) === itemNameKey(name));
   if (!same.length) return null;
   return same.reduce((a, b) => (itemPrice(a) <= itemPrice(b) ? a : b));
 }
@@ -489,7 +530,11 @@ function allProducts() {
 
 function productOptions() {
   return `<option value="">${t("selectProduct")}</option>` + allProducts()
-    .map((p) => `<option value="${p.id}">${p.itemName} — ${p.type || ""}</option>`)
+    .map((p) => {
+      const stock = isDental(p) ? trackedStock(p) : null;
+      const note = isDental(p) ? ` — ${stock == null ? "—" : stock} ${t("boxes")}` : ` — ${t("emergencySupplies")}`;
+      return `<option value="${p.id}">${p.itemName}${note}</option>`;
+    })
     .join("");
 }
 
@@ -514,6 +559,18 @@ function persist() {
 
 function notifyDbError(message) {
   alert(`${t("dbSaveError")}${message ? `: ${message}` : ""}`);
+}
+
+function stockErrorMessage(error) {
+  const msg = String(error || "");
+  if (/insufficient_stock/i.test(msg)) return t("insufficientStock");
+  if (/stock_required/i.test(msg)) return t("stockRequired");
+  return "";
+}
+
+function sameRecord(left, right) {
+  const ids = [left?.id, left?.sourceId].filter((value) => value != null && value !== "").map(String);
+  return ids.some((id) => id === String(right?.id || "") || id === String(right?.sourceId || ""));
 }
 
 function priceArchiveKey(row) {
@@ -632,14 +689,12 @@ let archiveMonth = null;
 let vendorChart;
 let compareChart;
 
-function supplyItemHeaders() {
-  return [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("bestPrices"), t("bestVendor"), t("lastUpdate"), ""];
-}
-
-function renderSupplyCategory() {
-  const rows = state.supplyItems.map((item) => {
-    const best = bestOffer(item.itemName);
+function supplyRows(items, includeStock) {
+  return items.map((item) => {
+    const best = bestOffer(item.itemName, item);
     const isBest = best && best.id === item.id;
+    const stock = trackedStock(item);
+    const stockCell = includeStock ? `<td class="${stock != null && stock < 6 ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>` : "";
     return `<tr>
       <td>${item.itemName}</td>
       <td>${item.unit}</td>
@@ -648,6 +703,7 @@ function renderSupplyCategory() {
       <td>${itemPrice(item)} ${t("currency")}${isBest ? ` <span class="badge badge-best">${t("cheapest")}</span>` : ""}</td>
       <td>${best ? itemPrice(best) + " " + t("currency") : ""}</td>
       <td>${best ? supplierById(best.supplierId)?.name || "" : ""}</td>
+      ${stockCell}
       <td>${item.updatedAt || ""}</td>
       <td>
         <button class="btn btn-sm btn-navy" type="button" data-edit-item="${item.id}">${t("edit")}</button>
@@ -655,12 +711,60 @@ function renderSupplyCategory() {
       </td>
     </tr>`;
   });
-  document.getElementById("table-medical").innerHTML = table(supplyItemHeaders(), rows);
+}
+
+function supplyItemHeaders(includeStock) {
+  const headers = [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("bestPrices"), t("bestVendor")];
+  if (includeStock) headers.push(t("stockQty"));
+  headers.push(t("lastUpdate"), "");
+  return headers;
+}
+
+function renderSupplyCategory() {
+  const dentalTable = document.getElementById("table-dental");
+  const emergencyTable = document.getElementById("table-emergency");
+  if (dentalTable) dentalTable.innerHTML = table(supplyItemHeaders(true), supplyRows(state.supplyItems.filter(isDental), true));
+  if (emergencyTable) emergencyTable.innerHTML = table(supplyItemHeaders(false), supplyRows(state.supplyItems.filter(isEmergency), false));
+}
+
+function renderStockAlerts() {
+  const box = document.getElementById("stock-alerts");
+  if (!box) return;
+  const low = lowStockItems();
+  if (!low.length) {
+    box.hidden = true;
+    box.innerHTML = "";
+    return;
+  }
+  box.hidden = false;
+  box.innerHTML = `<div class="stock-alert"><strong>${t("lowStockTitle")}</strong><ul>${low
+    .map((item) => `<li>${t("lowStockItem").replace("{name}", item.itemName).replace("{qty}", trackedStock(item))}</li>`)
+    .join("")}</ul></div>`;
+}
+
+function renderWarehouse() {
+  const box = document.getElementById("warehouse-table");
+  if (!box) return;
+  const items = state.supplyItems.filter(isDental);
+  const rows = items.map((item) => {
+    const stock = trackedStock(item);
+    return `<tr>
+      <td>${item.itemName}</td>
+      <td>${item.unit}</td>
+      <td>${item.type}</td>
+      <td class="${stock != null && stock < 6 ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
+      <td>
+        <input data-stock-input="${item.id}" type="number" min="0" step="1" value="${stock == null ? "" : stock}" style="max-width:110px" />
+      </td>
+      <td><button class="btn btn-sm btn-primary" type="button" data-save-stock="${item.id}">${t("saveStock")}</button></td>
+    </tr>`;
+  });
+  box.innerHTML = `<h3>${t("warehouse")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("saveStock"), ""], rows)}`;
 }
 
 function renderPriceDiffs() {
   const groups = {};
-  state.supplyItems.forEach((item) => {
+  state.supplyItems.filter(isDental).forEach((item) => {
     const key = itemNameKey(item.itemName);
     if (!groups[key]) groups[key] = [];
     groups[key].push(item);
@@ -697,9 +801,9 @@ function renderPriceDiffs() {
   }
   html += state.suppliers
     .map((s) => {
-      const items = state.supplyItems.filter((i) => i.supplierId === s.id);
+      const items = state.supplyItems.filter((i) => isDental(i) && i.supplierId === s.id);
       const rows = items.map((item) => {
-        const best = bestOffer(item.itemName);
+        const best = bestOffer(item.itemName, item);
         return `<tr>
           <td>${item.itemName}</td>
           <td>${itemPrice(item)} ${t("currency")}</td>
@@ -718,6 +822,8 @@ function renderPriceDiffs() {
 
 function renderSupplies() {
   renderSupplyCategory();
+  renderWarehouse();
+  renderStockAlerts();
   document.getElementById("table-vendors").innerHTML = table(
     [t("vendorName"), t("contactPerson"), t("phone"), t("email"), t("vendorNotes"), ""],
     state.suppliers.map(
@@ -819,6 +925,24 @@ function renderWithdrawals() {
   bindWithdrawForms();
 }
 
+async function adjustDentalStock(product, delta) {
+  if (!product || !isDental(product)) return { ok: true };
+  const current = trackedStock(product);
+  if (current == null) return { ok: false, error: t("stockRequired") };
+  const next = current + delta;
+  if (next < 0) return { ok: false, error: t("insufficientStock") };
+  const previous = product.stock;
+  product.stock = next;
+  const result = await updateSupply(product, state.suppliers);
+  if (result.error || !result.row) {
+    product.stock = previous;
+    return { ok: false, error: result.error || t("dbSaveError") };
+  }
+  Object.assign(product, result.row);
+  if (product.stock == null) product.stock = next;
+  return { ok: true };
+}
+
 function bindWithdrawForms() {
   document.querySelectorAll("[data-withdraw-form]").forEach((form) => {
     form.addEventListener("submit", async (e) => {
@@ -835,10 +959,42 @@ function bindWithdrawForms() {
         requester: data.get("requester").trim(),
         unitPrice: product ? itemPrice(product) : 0,
       };
-      const result = await insertWithdrawal(row);
-      if (result.error) {
-        notifyDbError(result.error);
+      if (product && isDental(product)) {
+        const available = trackedStock(product);
+        if (available == null) {
+          alert(t("stockRequired"));
+          return;
+        }
+        if (available < row.quantity) {
+          alert(t("insufficientStock"));
+          return;
+        }
+      }
+      let result = await insertWithdrawalLog({
+        ...row,
+        affectsStock: Boolean(product && isDental(product)),
+      });
+      if (result.missing) {
+        if (product && isDental(product)) {
+          const stockResult = await adjustDentalStock(product, -row.quantity);
+          if (!stockResult.ok) {
+            alert(stockResult.error);
+            return;
+          }
+        }
+        result = await insertWithdrawal(row);
+        if (result.error) {
+          if (product && isDental(product)) await adjustDentalStock(product, row.quantity);
+          notifyDbError(result.error);
+          return;
+        }
+      } else if (result.error) {
+        const friendly = stockErrorMessage(result.error);
+        if (friendly) alert(friendly);
+        else notifyDbError(result.error);
         return;
+      } else if (product && isDental(product)) {
+        product.stock = result.stock == null ? trackedStock(product) - row.quantity : Number(result.stock);
       }
       state.withdrawals.unshift(result.row);
       await archiveWithdrawal(result.row);
@@ -872,6 +1028,9 @@ function reportLabel(kind) {
 }
 
 function showClinicReports(kind) {
+  document.querySelectorAll("[data-report]").forEach((btn) => {
+    btn.classList.toggle("active", btn.dataset.report === kind);
+  });
   const listEl = document.getElementById("clinic-report-list");
   listEl.hidden = false;
   listEl.innerHTML = CLINICS.map(
@@ -1021,6 +1180,7 @@ function openEditItem(itemId) {
       <div><label>${t("itemType")}</label><input id="ei-type" value="${escapeAttr(item.type)}" required /></div>
       <div><label>${t("vendor")}</label><select id="ei-supplier" required>${sOpts}</select></div>
       <div><label>${t("price")}</label><input id="ei-price" type="number" min="0" step="0.01" value="${itemPrice(item)}" required /></div>
+      ${isDental(item) ? `<div><label>${t("stockQty")}</label><input id="ei-stock" type="number" min="0" step="1" value="${trackedStock(item) == null ? "" : trackedStock(item)}" required /></div>` : ""}
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
     </form>
   `);
@@ -1303,6 +1463,26 @@ document.getElementById("chart-vendor").addEventListener("change", () => {
   drawCompareChart();
 });
 
+document.getElementById("page-warehouse").addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-save-stock]");
+  if (!btn) return;
+  const item = state.supplyItems.find((row) => String(row.id) === String(btn.dataset.saveStock));
+  const input = btn.closest("tr")?.querySelector("[data-stock-input]");
+  if (!item || !input) return;
+  const value = Number(input.value);
+  if (!Number.isFinite(value) || value < 0) return;
+  item.stock = value;
+  item.updatedAt = todayISO();
+  const result = await updateSupply(item, state.suppliers);
+  if (result.error || !result.row) {
+    notifyDbError(result.error);
+    return;
+  }
+  Object.assign(item, result.row);
+  if (item.stock == null) item.stock = value;
+  persist();
+});
+
 document.querySelectorAll("#page-supplies .subnav-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
     document.querySelectorAll("#page-supplies .subnav-btn").forEach((b) => b.classList.remove("active"));
@@ -1341,12 +1521,13 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
     e.preventDefault();
     const data = new FormData(form);
     const item = {
-      category: "medical",
+      category: form.dataset.supplyForm === "emergency" ? "emergency" : "dental",
       itemName: data.get("itemName").trim(),
       unit: data.get("unit").trim(),
       type: data.get("type").trim(),
       supplierId: data.get("supplierId"),
       price: Number(data.get("price")),
+      stock: form.dataset.supplyForm === "emergency" ? null : Number(data.get("stock")),
       updatedAt: todayISO(),
     };
     const result = await insertSupply(item, state.suppliers);
@@ -1394,6 +1575,8 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       item.type = document.getElementById("ei-type").value.trim();
       item.supplierId = document.getElementById("ei-supplier").value;
       item.price = Number(document.getElementById("ei-price").value);
+      const stockInput = document.getElementById("ei-stock");
+      if (stockInput) item.stock = Number(stockInput.value);
       item.updatedAt = todayISO();
       const result = await updateSupply(item, state.suppliers);
       if (result.error) {
@@ -1460,10 +1643,22 @@ document.addEventListener("click", async (e) => {
     if (!confirm(t("confirmDeleteWithdrawal"))) return;
     const id = delWithdraw.dataset.delWithdraw;
     const clinicId = delWithdraw.dataset.delClinic;
+    const withdrawn = state.withdrawals.find((w) => String(w.id) === String(id));
+    const product = withdrawn ? state.supplyItems.find((p) => String(p.id) === String(withdrawn.productId)) : null;
     const result = await deleteWithdrawal(id, clinicId);
     if (result.error) {
       notifyDbError(result.error);
       return;
+    }
+    if (result.fromLog && product && isDental(product)) {
+      const fresh = await fetchDentalStock(product.id);
+      if (fresh.found) product.stock = fresh.stock;
+    } else if (!result.fromLog && product && isDental(product) && trackedStock(product) != null) {
+      const stockResult = await adjustDentalStock(product, Number(withdrawn.quantity) || 0);
+      if (!stockResult.ok) {
+        alert(stockResult.error);
+        return;
+      }
     }
     state.withdrawals = state.withdrawals.filter((w) => String(w.id) !== String(id));
     if (!state.deletedWithdrawalIds.includes(id)) state.deletedWithdrawalIds.push(id);
@@ -1498,6 +1693,60 @@ async function uploadLocalRows(rows, insertFn) {
   return pushed.rows;
 }
 
+function notDeletedSupply(row) {
+  const ids = [row.id, row.sourceId].filter((value) => value != null && value !== "").map(String);
+  return !ids.some((id) => state.deletedSupplyIds.includes(id));
+}
+
+function notDeletedWithdrawal(row) {
+  const ids = [row.id, row.sourceId].filter((value) => value != null && value !== "").map(String);
+  return !ids.some((id) => state.deletedWithdrawalIds.includes(id));
+}
+
+async function overlayCategory(tableResult, wantEmergency) {
+  if (!tableResult || tableResult.missing) return;
+  const current = state.supplyItems.filter((item) => isEmergency(item) === wantEmergency && notDeletedSupply(item));
+  const other = state.supplyItems.filter((item) => isEmergency(item) !== wantEmergency);
+  const cloud = (tableResult.rows || []).filter(notDeletedSupply);
+  if (!cloud.length) {
+    const uploaded = await uploadLocalRows(current, (item) =>
+      insertSupply({ ...item, category: wantEmergency ? "emergency" : "dental" }, state.suppliers)
+    );
+    state.supplyItems = [...other, ...uploaded];
+    return;
+  }
+  const extras = current.filter((item) => !cloud.some((row) => sameRecord(row, item)));
+  const uploaded = extras.length
+    ? await uploadLocalRows(extras, (item) =>
+        insertSupply({ ...item, category: wantEmergency ? "emergency" : "dental" }, state.suppliers)
+      )
+    : [];
+  state.supplyItems = [...other, ...cloud, ...uploaded];
+}
+
+async function overlayInventoryTables(result, legacyWithdrawals) {
+  await overlayCategory(result.dentalWarehouse, false);
+  await overlayCategory(result.emergencySupplies, true);
+  const log = result.withdrawalLog;
+  if (!log || log.missing) return;
+  const cloud = (log.rows || []).filter(notDeletedWithdrawal);
+  const local = state.withdrawals.filter(notDeletedWithdrawal);
+  const legacy = (legacyWithdrawals || []).filter(notDeletedWithdrawal);
+  const known = cloud.length ? cloud : [];
+  const extras = [...legacy, ...local].filter((row) => !known.some((item) => sameRecord(item, row) || sameRecord(row, item)));
+  const uniqueExtras = [];
+  extras.forEach((row) => {
+    if (uniqueExtras.some((item) => sameRecord(item, row) || sameRecord(row, item))) return;
+    uniqueExtras.push(row);
+  });
+  const uploaded = uniqueExtras.length
+    ? await uploadLocalRows(uniqueExtras, (row) =>
+        insertWithdrawalLog({ ...row, affectsStock: false, sourceId: row.sourceId || row.id })
+      )
+    : [];
+  state.withdrawals = [...known, ...uploaded];
+}
+
 async function hydrateFromDatabase() {
   const result = await loadProcurementData();
   if (!result.connection.ok) throw new Error(result.error || result.connection.message);
@@ -1522,17 +1771,21 @@ async function hydrateFromDatabase() {
     );
   }
 
-  if (cloudWithdrawals.length) {
-    const byId = new Map(cloudWithdrawals.map((row) => [String(row.id), row]));
-    state.withdrawals.forEach((row) => {
-      if (!byId.has(String(row.id))) byId.set(String(row.id), row);
-    });
-    state.withdrawals = [...byId.values()];
-  } else if (state.withdrawals.length) {
-    state.withdrawals = await uploadLocalRows(
-      state.withdrawals.filter((row) => !state.deletedWithdrawalIds.includes(String(row.id))),
-      insertWithdrawal
-    );
+  await overlayInventoryTables(result, cloudWithdrawals);
+
+  if (result.withdrawalLog?.missing) {
+    if (cloudWithdrawals.length) {
+      const byId = new Map(cloudWithdrawals.map((row) => [String(row.id), row]));
+      state.withdrawals.forEach((row) => {
+        if (!byId.has(String(row.id))) byId.set(String(row.id), row);
+      });
+      state.withdrawals = [...byId.values()];
+    } else if (state.withdrawals.length) {
+      state.withdrawals = await uploadLocalRows(
+        state.withdrawals.filter((row) => !state.deletedWithdrawalIds.includes(String(row.id))),
+        insertWithdrawal
+      );
+    }
   }
 
   if (cloudReports.length) state.reports = cloudReports;
