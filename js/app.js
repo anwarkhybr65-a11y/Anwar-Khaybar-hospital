@@ -62,6 +62,7 @@ const I18N = {
     saveReport: "حفظ التقرير",
     reportSaved: "تم حفظ التقرير",
     withdrawals: "مسحوبات العيادات",
+    clinicRequests: "طلبات العيادة",
     supplies: "مستلزمات",
     dentalSupplies: "مستلزمات الأسنان",
     emergencySupplies: "مستلزمات الطوارئ",
@@ -285,6 +286,7 @@ const I18N = {
     saveReport: "Save report",
     reportSaved: "Report saved",
     withdrawals: "Clinic withdrawals",
+    clinicRequests: "Clinic requests",
     supplies: "Supplies",
     dentalSupplies: "Dental supplies",
     emergencySupplies: "Emergency supplies",
@@ -747,6 +749,9 @@ function applyAccess() {
   document.querySelectorAll("[data-nav-clinic]").forEach((el) => {
     el.textContent = staff ? t("myClinicStock") : t("clinicStocks");
   });
+  document.querySelectorAll("[data-nav-withdrawals]").forEach((el) => {
+    el.textContent = staff ? t("clinicRequests") : t("withdrawals");
+  });
   const hint = document.querySelector("#page-warehouse [data-i18n='warehouseHint']");
   if (hint) hint.textContent = staff ? t("warehouseStaffHint") : t("warehouseHint");
   if (state.session) {
@@ -758,7 +763,7 @@ function applyAccess() {
   }
 }
 
-const MANAGER_PAGES = new Set(["supplies", "emergency", "archive"]);
+const MANAGER_PAGES = new Set(["supplies", "emergency", "archive", "warehouse"]);
 
 function openPage(page) {
   if (state.session && isStaff() && MANAGER_PAGES.has(page)) page = "dashboard";

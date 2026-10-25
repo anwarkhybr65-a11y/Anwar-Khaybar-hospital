@@ -314,6 +314,7 @@ textarea { min-height: 84px; resize: vertical; }
   font-weight: 700;
 }
 .request-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+body.role-staff .module-grid { grid-template-columns: repeat(3, 1fr); }
 body.role-staff #dash-cards,
 body.role-staff #dash-detail,
 body.role-staff #disposal-report,
@@ -571,7 +572,8 @@ th { color: var(--muted); font-size: 0.85rem; }
 }
 
 @media (max-width: 1100px) {
-  .stats, .grid-2, .form-grid, .reports, .module-grid, .record-grid, .dash-cards { grid-template-columns: 1fr; }
+  .stats, .grid-2, .form-grid, .reports, .module-grid, .record-grid, .dash-cards,
+  body.role-staff .module-grid { grid-template-columns: 1fr; }
   .app.visible { grid-template-columns: 1fr; }
   .sidebar { flex-direction: row; flex-wrap: wrap; }
   .sidebar .logo { flex: 1 1 100%; justify-content: center; }

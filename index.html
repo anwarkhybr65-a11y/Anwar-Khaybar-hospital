@@ -57,8 +57,8 @@
           <div class="module-grid">
             <button class="module-btn" type="button" data-module="requests"><span class="report-icon">📝</span><span data-i18n="requests">الطلبات</span><span class="module-count" id="request-count" hidden></span></button>
             <button class="module-btn" type="button" data-module="clinic-stock"><span class="report-icon">🏥</span><span data-nav-clinic data-i18n="clinicStocks">مخزون العيادات</span></button>
-            <button class="module-btn" type="button" data-module="withdrawals"><span class="report-icon">📤</span><span data-i18n="withdrawals">المسحوبات</span></button>
-            <button class="module-btn" type="button" data-module="warehouse"><span class="report-icon">🏬</span><span data-i18n="warehouse">المستودع</span></button>
+            <button class="module-btn" type="button" data-module="withdrawals"><span class="report-icon">📤</span><span data-nav-withdrawals data-i18n="withdrawals">مسحوبات العيادات</span></button>
+            <button class="module-btn" type="button" data-module="warehouse" data-manager-only><span class="report-icon">🏬</span><span data-i18n="warehouse">المستودع</span></button>
           </div>
           <div id="staff-alerts"></div>
           <div class="dash-cards" id="dash-cards" data-manager-only></div>
@@ -85,7 +85,7 @@
         </section>
 
         <section class="page" id="page-withdrawals">
-          <h2 class="page-title" data-i18n="withdrawals">مسحوبات العيادات</h2>
+          <h2 class="page-title" data-nav-withdrawals data-i18n="withdrawals">مسحوبات العيادات</h2>
           <div class="subnav" id="clinic-subnav"></div>
           <div id="clinic-pages"></div>
         </section>
