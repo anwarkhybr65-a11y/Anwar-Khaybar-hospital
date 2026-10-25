@@ -4,9 +4,11 @@ import {
   deleteSupply,
   deleteVendor,
   deleteWithdrawal,
+  ensureDentalExpiryColumns,
   fetchDentalStock,
   insertArchivePrice,
   insertArchiveWithdrawal,
+  insertDisposal,
   insertReport,
   insertSupply,
   insertVendor,
@@ -16,6 +18,7 @@ import {
   loginUser,
   updateSupply,
   updateVendor,
+  upsertClinicNames,
 } from "./supabaseClient.js";
 
 const KEY = "anwar-khaybar-procurement";
@@ -45,6 +48,8 @@ const I18N = {
     login: "تسجيل الدخول",
     logout: "تسجيل الخروج",
     settings: "إعدادات",
+    clinicNames: "أسماء العيادات",
+    saveClinicNames: "حفظ أسماء العيادات",
     clinicReport: "تقرير العيادة",
     dashboard: "لوحة التحكم",
     hospitalData: "بيانات المستشفى",
@@ -67,6 +72,30 @@ const I18N = {
     saveStock: "حفظ الكمية",
     lowStockTitle: "تنبيه: منتجات على وشك النفاد",
     lowStockItem: "الكمية المتبقية من {name} هي {qty} علب، والمنتج على وشك النفاد.",
+    lowStockCard: "قاربت على النفاد",
+    lowStockCardAlert: "تنبيه: يوجد {count} من الأصناف بكمية أقل من 6 علب في مستودع الأسنان.",
+    lowStockCardClear: "لا توجد مستلزمات قاربت على النفاد.",
+    expiryCard: "قاربت صلاحيتها على الانتهاء",
+    expiryCardAlert: "تحذير: يوجد {count} من الأصناف قاربت صلاحيتها أو تالفة.",
+    expiryCardClear: "لا توجد مستلزمات قاربت صلاحيتها أو تالفة.",
+    expiryDate: "تاريخ انتهاء الصلاحية",
+    damagedItem: "الصنف تالف",
+    damaged: "تالف",
+    dispose: "إتلاف",
+    confirmDispose: "هل تريد إتلاف الكمية المتبقية من {name} ({qty} علب)؟ لن تبقى في المستودع.",
+    disposalReport: "تقرير الإتلاف",
+    disposalReason: "سبب الإتلاف",
+    reasonDamaged: "تالف",
+    reasonExpired: "منتهي الصلاحية",
+    reasonNear: "قارب انتهاء الصلاحية",
+    daysLeft: "الأيام المتبقية",
+    expiredSince: "منتهية منذ {days} يوم",
+    expiresToday: "تنتهي اليوم",
+    daysRemaining: "متبقي {days} يوم",
+    noExpiry: "غير محدد",
+    disposalValue: "قيمة الإتلاف",
+    disposalTotal: "إجمالي قيمة الإتلاف",
+    expiryHint: "يظهر الصنف هنا إذا كان تالفاً، أو إذا تبقى على صلاحيته 90 يوماً أو أقل.",
     insufficientStock: "الكمية المتاحة في المستودع لا تكفي لهذا السحب.",
     stockRequired: "حدّد الكمية المتاحة في المستودع قبل تسجيل السحب.",
     archive: "أرشيف",
@@ -158,6 +187,8 @@ const I18N = {
     login: "Sign in",
     logout: "Log out",
     settings: "Settings",
+    clinicNames: "Clinic names",
+    saveClinicNames: "Save clinic names",
     clinicReport: "Clinic report",
     dashboard: "Dashboard",
     hospitalData: "Hospital data",
@@ -180,6 +211,30 @@ const I18N = {
     saveStock: "Save quantity",
     lowStockTitle: "Alert: items are running low",
     lowStockItem: "{name} has {qty} boxes left and is about to run out.",
+    lowStockCard: "Running low",
+    lowStockCardAlert: "Alert: {count} items have fewer than 6 boxes in the dental warehouse.",
+    lowStockCardClear: "No supplies are running low.",
+    expiryCard: "Nearing expiry",
+    expiryCardAlert: "Warning: {count} items are near expiry or damaged.",
+    expiryCardClear: "No supplies are near expiry or damaged.",
+    expiryDate: "Expiry date",
+    damagedItem: "Item is damaged",
+    damaged: "Damaged",
+    dispose: "Dispose",
+    confirmDispose: "Dispose the remaining quantity of {name} ({qty} boxes)? It will leave the warehouse.",
+    disposalReport: "Disposal report",
+    disposalReason: "Disposal reason",
+    reasonDamaged: "Damaged",
+    reasonExpired: "Expired",
+    reasonNear: "Nearing expiry",
+    daysLeft: "Days remaining",
+    expiredSince: "Expired {days} days ago",
+    expiresToday: "Expires today",
+    daysRemaining: "{days} days left",
+    noExpiry: "Not set",
+    disposalValue: "Disposal value",
+    disposalTotal: "Total disposal value",
+    expiryHint: "An item appears here when it is damaged, or when 90 days or fewer remain before it expires.",
     insufficientStock: "The warehouse does not have enough of this item for the withdrawal.",
     stockRequired: "Set the available warehouse quantity before recording a withdrawal.",
     archive: "Archive",
@@ -272,6 +327,14 @@ function uid(prefix) {
 }
 
 function clinicName(id) {
+  const custom = state.clinicNames && state.clinicNames[id];
+  if (custom && String(custom).trim()) return String(custom).trim();
+  const c = CLINICS.find((x) => x.id === id);
+  if (!c) return id;
+  return state.lang === "ar" ? c.ar : c.en;
+}
+
+function defaultClinicName(id) {
   const c = CLINICS.find((x) => x.id === id);
   if (!c) return id;
   return state.lang === "ar" ? c.ar : c.en;
@@ -287,6 +350,8 @@ function seed() {
     reports: [],
     withdrawalArchive: [],
     priceHistory: [],
+    disposals: [],
+    clinicNames: {},
   };
 }
 
@@ -433,6 +498,8 @@ function load() {
   if (!Array.isArray(data.deletedArchiveWithdrawalIds)) data.deletedArchiveWithdrawalIds = [];
   if (!Array.isArray(data.deletedArchivePriceIds)) data.deletedArchivePriceIds = [];
   if (!Array.isArray(data.deletedArchivePriceKeys)) data.deletedArchivePriceKeys = [];
+  if (!Array.isArray(data.disposals)) data.disposals = [];
+  if (!data.clinicNames || typeof data.clinicNames !== "object") data.clinicNames = {};
   recoverMissing(data);
   restoreSuppliers(data);
   save(data);
@@ -526,6 +593,54 @@ function lowStockItems() {
     const stock = trackedStock(item);
     return stock != null && stock < 6;
   });
+}
+
+const EXPIRY_WINDOW_DAYS = 90;
+let dashPanel = null;
+
+function daysUntil(date) {
+  if (!date) return null;
+  const target = new Date(`${date}T00:00:00`);
+  if (Number.isNaN(target.getTime())) return null;
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return Math.round((target.getTime() - today.getTime()) / 86400000);
+}
+
+function expiryConcern(item) {
+  if (!isDental(item)) return null;
+  const stock = trackedStock(item);
+  if (stock == null || stock <= 0) return null;
+  if (item.damaged) return "damaged";
+  const days = daysUntil(item.expiryDate);
+  if (days == null || days > EXPIRY_WINDOW_DAYS) return null;
+  return days < 0 ? "expired" : "near";
+}
+
+function expiryItems() {
+  return state.supplyItems
+    .filter((item) => expiryConcern(item))
+    .sort((a, b) => (daysUntil(a.expiryDate) ?? -9999) - (daysUntil(b.expiryDate) ?? -9999));
+}
+
+function daysLabel(date) {
+  const days = daysUntil(date);
+  if (days == null) return t("noExpiry");
+  if (days < 0) return t("expiredSince").replace("{days}", Math.abs(days));
+  if (days === 0) return t("expiresToday");
+  return t("daysRemaining").replace("{days}", days);
+}
+
+function disposalReasonLabel(reason) {
+  if (reason === "expired") return t("reasonExpired");
+  if (reason === "near") return t("reasonNear");
+  return t("reasonDamaged");
+}
+
+function applySavedSupply(item, row) {
+  const expiryDate = row.expiryDate === undefined ? item.expiryDate || "" : row.expiryDate || "";
+  const damaged = row.damaged === undefined ? item.damaged === true : row.damaged === true;
+  Object.assign(item, row, { expiryDate, damaged });
 }
 
 function bestOffer(name, item) {
@@ -707,6 +822,7 @@ function supplyRows(items, includeStock) {
     const isBest = best && best.id === item.id;
     const stock = trackedStock(item);
     const stockCell = includeStock ? `<td class="${stock != null && stock < 6 ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>` : "";
+    const expiryCell = includeStock ? `<td>${item.expiryDate || t("noExpiry")}</td><td>${item.damaged ? `<span class="badge badge-danger">${t("damaged")}</span>` : t("none")}</td>` : "";
     return `<tr>
       <td>${item.itemName}</td>
       <td>${item.unit}</td>
@@ -716,6 +832,7 @@ function supplyRows(items, includeStock) {
       <td>${best ? itemPrice(best) + " " + t("currency") : ""}</td>
       <td>${best ? supplierById(best.supplierId)?.name || "" : ""}</td>
       ${stockCell}
+      ${expiryCell}
       <td>${item.updatedAt || ""}</td>
       <td>
         <button class="btn btn-sm btn-navy" type="button" data-edit-item="${item.id}">${t("edit")}</button>
@@ -727,7 +844,7 @@ function supplyRows(items, includeStock) {
 
 function supplyItemHeaders(includeStock) {
   const headers = [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("bestPrices"), t("bestVendor")];
-  if (includeStock) headers.push(t("stockQty"));
+  if (includeStock) headers.push(t("stockQty"), t("expiryDate"), t("damaged"));
   headers.push(t("lastUpdate"), "");
   return headers;
 }
@@ -739,19 +856,150 @@ function renderSupplyCategory() {
   if (emergencyTable) emergencyTable.innerHTML = table(supplyItemHeaders(false), supplyRows(state.supplyItems.filter(isEmergency), false));
 }
 
-function renderStockAlerts() {
-  const box = document.getElementById("stock-alerts");
+function renderDashboardAlerts() {
+  const cards = document.getElementById("dash-cards");
+  const detail = document.getElementById("dash-detail");
+  if (!cards || !detail) return;
+  const low = lowStockItems().slice().sort((a, b) => trackedStock(a) - trackedStock(b));
+  const expiring = expiryItems();
+  const stockAlert = low.length ? t("lowStockCardAlert").replace("{count}", low.length) : t("lowStockCardClear");
+  const expiryAlert = expiring.length ? t("expiryCardAlert").replace("{count}", expiring.length) : t("expiryCardClear");
+  cards.innerHTML = `
+    <button class="dash-card dash-card-stock${low.length ? " is-alert" : ""}${dashPanel === "stock" ? " active" : ""}" type="button" data-dash-panel="stock" aria-expanded="${dashPanel === "stock"}">
+      <span class="dash-card-icon" aria-hidden="true">📦</span>
+      <span class="dash-card-body">
+        <span class="dash-card-title">${t("lowStockCard")}</span>
+        <span class="dash-card-alert">${stockAlert}</span>
+      </span>
+      <span class="dash-card-count">${low.length}</span>
+    </button>
+    <button class="dash-card dash-card-expiry${expiring.length ? " is-alert" : ""}${dashPanel === "expiry" ? " active" : ""}" type="button" data-dash-panel="expiry" aria-expanded="${dashPanel === "expiry"}">
+      <span class="dash-card-icon" aria-hidden="true">⏳</span>
+      <span class="dash-card-body">
+        <span class="dash-card-title">${t("expiryCard")}</span>
+        <span class="dash-card-alert">${expiryAlert}</span>
+      </span>
+      <span class="dash-card-count">${expiring.length}</span>
+    </button>`;
+  if (dashPanel === "stock") {
+    detail.hidden = false;
+    detail.innerHTML = `
+      <div class="dash-detail-head"><h3>${t("lowStockTitle")}</h3></div>
+      ${table(
+        [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("stockQty"), t("lowStockTitle")],
+        low.map((item) => {
+          const qty = trackedStock(item);
+          return `<tr>
+            <td>${item.itemName}</td>
+            <td>${item.unit || ""}</td>
+            <td>${item.type || ""}</td>
+            <td>${supplierById(item.supplierId)?.name || item.supplierName || ""}</td>
+            <td class="stock-low">${qty} ${t("boxes")}</td>
+            <td>${t("lowStockItem").replace("{name}", item.itemName).replace("{qty}", qty)}</td>
+          </tr>`;
+        })
+      )}`;
+  } else if (dashPanel === "expiry") {
+    detail.hidden = false;
+    detail.innerHTML = `
+      <div class="dash-detail-head"><h3>${t("expiryCard")}</h3></div>
+      <p class="empty">${t("expiryHint")}</p>
+      ${table(
+        [t("itemName"), t("unitSize"), t("vendor"), t("stockQty"), t("expiryDate"), t("daysLeft"), t("disposalReason"), ""],
+        expiring.map((item) => {
+          const concern = expiryConcern(item);
+          const qty = trackedStock(item);
+          return `<tr>
+            <td>${item.itemName}</td>
+            <td>${item.unit || ""}</td>
+            <td>${supplierById(item.supplierId)?.name || item.supplierName || ""}</td>
+            <td>${qty} ${t("boxes")}</td>
+            <td>${item.expiryDate || t("noExpiry")}</td>
+            <td>${daysLabel(item.expiryDate)}</td>
+            <td><span class="badge ${concern === "near" ? "badge-wait" : "badge-danger"}">${disposalReasonLabel(concern)}</span></td>
+            <td><button class="btn btn-sm btn-danger" type="button" data-dispose-item="${escapeAttr(item.id)}">${t("dispose")}</button></td>
+          </tr>`;
+        })
+      )}`;
+  } else {
+    detail.hidden = true;
+    detail.innerHTML = "";
+  }
+  renderDisposalReport();
+}
+
+function renderDisposalReport() {
+  const box = document.getElementById("disposal-report");
   if (!box) return;
-  const low = lowStockItems();
-  if (!low.length) {
-    box.hidden = true;
-    box.innerHTML = "";
+  const rows = (state.disposals || []).slice().sort((a, b) => (b.disposedAt || "").localeCompare(a.disposedAt || ""));
+  const total = rows.reduce((sum, row) => sum + Number(row.quantity) * Number(row.unitPrice), 0);
+  box.innerHTML = `
+    <div class="dash-detail-head">
+      <h3>${t("disposalReport")}</h3>
+      ${rows.length ? `<button class="btn btn-navy" type="button" data-print-disposal>${t("print")}</button>` : ""}
+    </div>
+    <div id="disposal-report-print">
+      ${table(
+        [t("date"), t("itemName"), t("quantity"), t("disposalReason"), t("expiryDate"), t("disposalValue")],
+        rows.map(
+          (row) => `<tr>
+            <td>${row.disposedAt || ""}</td>
+            <td>${row.productName}</td>
+            <td>${row.quantity} ${t("boxes")}</td>
+            <td>${disposalReasonLabel(row.reason)}</td>
+            <td>${row.expiryDate || t("noExpiry")}</td>
+            <td>${Number(row.quantity) * Number(row.unitPrice)} ${t("currency")}</td>
+          </tr>`
+        )
+      )}
+      ${rows.length ? `<p><strong>${t("disposalTotal")}: ${total} ${t("currency")}</strong></p>` : ""}
+    </div>`;
+}
+
+async function disposeItem(id) {
+  const item = state.supplyItems.find((row) => String(row.id) === String(id));
+  const qty = trackedStock(item);
+  if (!item || qty == null || qty <= 0) return;
+  const reason = expiryConcern(item) || "damaged";
+  if (!confirm(t("confirmDispose").replace("{name}", item.itemName).replace("{qty}", qty))) return;
+  const previousStock = item.stock;
+  const previousDamaged = item.damaged === true;
+  item.stock = 0;
+  item.damaged = false;
+  item.updatedAt = todayISO();
+  const updated = await updateSupply(item, state.suppliers);
+  if (updated.error || !updated.row) {
+    item.stock = previousStock;
+    item.damaged = previousDamaged;
+    notifyDbError(updated.error);
     return;
   }
-  box.hidden = false;
-  box.innerHTML = `<div class="stock-alert"><strong>${t("lowStockTitle")}</strong><ul>${low
-    .map((item) => `<li>${t("lowStockItem").replace("{name}", item.itemName).replace("{qty}", trackedStock(item))}</li>`)
-    .join("")}</ul></div>`;
+  applySavedSupply(item, updated.row);
+  item.stock = 0;
+  item.damaged = false;
+  const saved = await insertDisposal({
+    productId: item.id,
+    productName: item.itemName,
+    unit: item.unit,
+    type: item.type,
+    supplierName: supplierById(item.supplierId)?.name || item.supplierName || "",
+    quantity: qty,
+    unitPrice: itemPrice(item),
+    reason,
+    expiryDate: item.expiryDate || "",
+    disposedAt: todayISO(),
+  });
+  if (saved.error || !saved.row) {
+    item.stock = previousStock;
+    item.damaged = previousDamaged;
+    const rolled = await updateSupply(item, state.suppliers);
+    if (rolled.row) applySavedSupply(item, rolled.row);
+    notifyDbError(saved.error);
+    return;
+  }
+  if (!Array.isArray(state.disposals)) state.disposals = [];
+  state.disposals.unshift(saved.row);
+  persist();
 }
 
 function renderWarehouse() {
@@ -765,13 +1013,15 @@ function renderWarehouse() {
       <td>${item.unit}</td>
       <td>${item.type}</td>
       <td class="${stock != null && stock < 6 ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
+      <td><input data-expiry-input type="date" value="${item.expiryDate || ""}" /></td>
+      <td><input data-damaged-input type="checkbox" ${item.damaged ? "checked" : ""} /></td>
       <td>
         <input data-stock-input="${item.id}" type="number" min="0" step="1" value="${stock == null ? "" : stock}" style="max-width:110px" />
       </td>
       <td><button class="btn btn-sm btn-primary" type="button" data-save-stock="${item.id}">${t("saveStock")}</button></td>
     </tr>`;
   });
-  box.innerHTML = `<h3>${t("warehouse")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("saveStock"), ""], rows)}`;
+  box.innerHTML = `<h3>${t("warehouse")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("expiryDate"), t("damaged"), t("saveStock"), ""], rows)}`;
 }
 
 function renderPriceDiffs() {
@@ -835,7 +1085,7 @@ function renderPriceDiffs() {
 function renderSupplies() {
   renderSupplyCategory();
   renderWarehouse();
-  renderStockAlerts();
+  renderDashboardAlerts();
   document.getElementById("table-vendors").innerHTML = table(
     [t("vendorName"), t("contactPerson"), t("phone"), t("email"), t("vendorNotes"), ""],
     state.suppliers.map(
@@ -1192,7 +1442,9 @@ function openEditItem(itemId) {
       <div><label>${t("itemType")}</label><input id="ei-type" value="${escapeAttr(item.type)}" required /></div>
       <div><label>${t("vendor")}</label><select id="ei-supplier" required>${sOpts}</select></div>
       <div><label>${t("price")}</label><input id="ei-price" type="number" min="0" step="0.01" value="${itemPrice(item)}" required /></div>
-      ${isDental(item) ? `<div><label>${t("stockQty")}</label><input id="ei-stock" type="number" min="0" step="1" value="${trackedStock(item) == null ? "" : trackedStock(item)}" required /></div>` : ""}
+      ${isDental(item) ? `<div><label>${t("stockQty")}</label><input id="ei-stock" type="number" min="0" step="1" value="${trackedStock(item) == null ? "" : trackedStock(item)}" required /></div>
+      <div><label>${t("expiryDate")}</label><input id="ei-expiry" type="date" value="${escapeAttr(item.expiryDate)}" /></div>
+      <div><label><input id="ei-damaged" type="checkbox" ${item.damaged ? "checked" : ""} /> ${t("damagedItem")}</label></div>` : ""}
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
     </form>
   `);
@@ -1561,14 +1813,18 @@ document.getElementById("page-warehouse").addEventListener("click", async (e) =>
   if (!item || !input) return;
   const value = Number(input.value);
   if (!Number.isFinite(value) || value < 0) return;
+  const expiryInput = btn.closest("tr")?.querySelector("[data-expiry-input]");
+  const damagedInput = btn.closest("tr")?.querySelector("[data-damaged-input]");
   item.stock = value;
+  item.expiryDate = expiryInput?.value || "";
+  item.damaged = Boolean(damagedInput?.checked);
   item.updatedAt = todayISO();
   const result = await updateSupply(item, state.suppliers);
   if (result.error || !result.row) {
     notifyDbError(result.error);
     return;
   }
-  Object.assign(item, result.row);
+  applySavedSupply(item, result.row);
   if (item.stock == null) item.stock = value;
   persist();
 });
@@ -1590,6 +1846,27 @@ document.getElementById("clinic-subnav").addEventListener("click", (e) => {
   document.querySelectorAll("#clinic-pages .subpage").forEach((p) => p.classList.remove("active"));
   const id = btn.dataset.clinic === "totals" ? "clinic-totals" : "clinic-" + btn.dataset.clinic;
   document.getElementById(id)?.classList.add("active");
+});
+
+document.getElementById("page-dashboard").addEventListener("click", async (e) => {
+  const panelBtn = e.target.closest("[data-dash-panel]");
+  if (panelBtn) {
+    const next = panelBtn.dataset.dashPanel;
+    dashPanel = dashPanel === next ? null : next;
+    renderDashboardAlerts();
+    if (dashPanel) document.getElementById("dash-detail")?.scrollIntoView({ block: "nearest" });
+    return;
+  }
+  const disposeBtn = e.target.closest("[data-dispose-item]");
+  if (disposeBtn) {
+    await disposeItem(disposeBtn.dataset.disposeItem);
+    return;
+  }
+  const printBtn = e.target.closest("[data-print-disposal]");
+  if (printBtn) {
+    const box = document.getElementById("disposal-report-print");
+    printHtml(box ? box.innerHTML : "", t("disposalReport"));
+  }
 });
 
 document.querySelectorAll("[data-report]").forEach((btn) => {
@@ -1618,6 +1895,8 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
       supplierId: data.get("supplierId"),
       price: Number(data.get("price")),
       stock: form.dataset.supplyForm === "emergency" ? null : Number(data.get("stock")),
+      expiryDate: form.dataset.supplyForm === "emergency" ? "" : data.get("expiryDate") || "",
+      damaged: form.dataset.supplyForm === "emergency" ? false : data.get("damaged") === "on",
       updatedAt: todayISO(),
     };
     const result = await insertSupply(item, state.suppliers);
@@ -1625,6 +1904,8 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
       notifyDbError(result.error);
       return;
     }
+    if (result.row.expiryDate === undefined) result.row.expiryDate = item.expiryDate || "";
+    if (result.row.damaged === undefined) result.row.damaged = item.damaged === true;
     state.supplyItems.unshift(result.row);
     await logPrice(result.row);
     form.reset();
@@ -1656,6 +1937,25 @@ document.getElementById("modal").addEventListener("click", (e) => {
   if (e.target.id === "modal") closeModal();
 });
 document.getElementById("modal").addEventListener("submit", async (e) => {
+  if (e.target.id === "clinic-names-form") {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const names = {};
+    for (const clinic of CLINICS) {
+      const value = String(data.get(clinic.id) || "").trim();
+      if (!value) return;
+      names[clinic.id] = value;
+    }
+    const result = await upsertClinicNames(names);
+    if (result.error) {
+      notifyDbError(result.error);
+      return;
+    }
+    state.clinicNames = names;
+    persist();
+    closeModal();
+    return;
+  }
   if (e.target.id === "edit-item-form") {
     e.preventDefault();
     const item = state.supplyItems.find((i) => i.id === document.getElementById("edit-full-item-id").value);
@@ -1667,13 +1967,17 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       item.price = Number(document.getElementById("ei-price").value);
       const stockInput = document.getElementById("ei-stock");
       if (stockInput) item.stock = Number(stockInput.value);
+      const expiryInput = document.getElementById("ei-expiry");
+      const damagedInput = document.getElementById("ei-damaged");
+      if (expiryInput) item.expiryDate = expiryInput.value || "";
+      if (damagedInput) item.damaged = damagedInput.checked;
       item.updatedAt = todayISO();
       const result = await updateSupply(item, state.suppliers);
       if (result.error) {
         notifyDbError(result.error);
         return;
       }
-      Object.assign(item, result.row);
+      applySavedSupply(item, result.row || item);
       await logPrice(item);
       persist();
     }
@@ -1798,11 +2102,23 @@ async function overlayCategory(tableResult, wantEmergency) {
   const current = state.supplyItems.filter((item) => isEmergency(item) === wantEmergency && notDeletedSupply(item));
   const other = state.supplyItems.filter((item) => isEmergency(item) !== wantEmergency);
   const cloud = (tableResult.rows || []).filter(notDeletedSupply);
+  const expiryReady = wantEmergency ? true : await ensureDentalExpiryColumns();
+  const withMeta = (row) => {
+    if (expiryReady || wantEmergency) {
+      return { ...row, expiryDate: row.expiryDate || "", damaged: row.damaged === true };
+    }
+    const local = current.find((item) => sameRecord(row, item) || sameRecord(item, row));
+    return {
+      ...row,
+      expiryDate: local?.expiryDate || "",
+      damaged: local?.damaged === true,
+    };
+  };
   if (!cloud.length) {
     const uploaded = await uploadLocalRows(current, (item) =>
       insertSupply({ ...item, category: wantEmergency ? "emergency" : "dental" }, state.suppliers)
     );
-    state.supplyItems = [...other, ...uploaded];
+    state.supplyItems = [...other, ...uploaded.map(withMeta)];
     return;
   }
   const extras = current.filter((item) => !cloud.some((row) => sameRecord(row, item)));
@@ -1811,7 +2127,7 @@ async function overlayCategory(tableResult, wantEmergency) {
         insertSupply({ ...item, category: wantEmergency ? "emergency" : "dental" }, state.suppliers)
       )
     : [];
-  state.supplyItems = [...other, ...cloud, ...uploaded];
+  state.supplyItems = [...other, ...cloud.map(withMeta), ...uploaded.map(withMeta)];
 }
 
 async function overlayInventoryTables(result, legacyWithdrawals) {
@@ -1912,6 +2228,29 @@ async function hydrateFromDatabase() {
   }
   await syncAllProductsToPriceArchive();
 
+  const disposalCloud = result.disposalLog;
+  if (!Array.isArray(state.disposals)) state.disposals = [];
+  if (disposalCloud && !disposalCloud.missing && !disposalCloud.error) {
+    const cloudDisposals = disposalCloud.rows || [];
+    if (cloudDisposals.length) {
+      const byId = new Map(cloudDisposals.map((row) => [String(row.id), row]));
+      state.disposals.forEach((row) => {
+        if (row.id && !byId.has(String(row.id))) byId.set(String(row.id), row);
+      });
+      state.disposals = [...byId.values()];
+    } else if (state.disposals.length) {
+      state.disposals = await uploadLocalRows(state.disposals, insertDisposal);
+    }
+  }
+
+  const clinicCloud = result.clinicNames;
+  if (!state.clinicNames || typeof state.clinicNames !== "object") state.clinicNames = {};
+  if (clinicCloud && !clinicCloud.missing && !clinicCloud.error) {
+    const cloudNames = clinicCloud.names || {};
+    if (Object.keys(cloudNames).length) state.clinicNames = { ...state.clinicNames, ...cloudNames };
+    else if (Object.keys(state.clinicNames).length) await upsertClinicNames(state.clinicNames);
+  }
+
   const cloudVendors = result.vendors || [];
   restoreSuppliers(state);
   if (cloudVendors.length) {
@@ -1934,7 +2273,15 @@ async function hydrateFromDatabase() {
 let dbStatusText = "";
 
 function settingsDbHtml() {
+  const fields = CLINICS.map(
+    (clinic) => `<div class="full"><label>${defaultClinicName(clinic.id)}</label><input name="${clinic.id}" value="${escapeAttr(clinicName(clinic.id))}" required /></div>`
+  ).join("");
   return `
+    <h3>${t("clinicNames")}</h3>
+    <form class="form-grid" id="clinic-names-form">
+      ${fields}
+      <div class="full"><button class="btn btn-primary" type="submit">${t("saveClinicNames")}</button></div>
+    </form>
     <h3>${t("hospitalData")}</h3>
     <p class="empty">${dbStatusText || t("supabaseConnected")}</p>
   `;
