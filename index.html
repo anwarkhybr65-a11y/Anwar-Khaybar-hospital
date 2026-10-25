@@ -17,15 +17,11 @@
         <img class="hospital-logo" src="/img/mark.png?v=1" alt="شعار AX" />
       </div>
       <p data-i18n="loginSubtitle">متابعة الموردين ومسحوبات العيادات</p>
-      <p class="choose-account" data-i18n="chooseAccount">اختر الحساب</p>
-      <div class="user-icons" id="user-icons"></div>
-      <input type="hidden" id="login-user" />
-      <div class="login-pass-box" id="login-pass-box" hidden>
-        <p class="selected-user" id="selected-user-label"></p>
-        <label data-i18n="password">كلمة المرور</label>
-        <input id="login-pass" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password" />
-        <button class="btn btn-primary btn-block" type="submit" data-i18n="login">تسجيل الدخول</button>
-      </div>
+      <label data-i18n="username">اسم المستخدم</label>
+      <input id="login-user" name="username" autocomplete="username" required />
+      <label data-i18n="password">كلمة المرور</label>
+      <input id="login-pass" name="password" type="password" inputmode="numeric" maxlength="6" autocomplete="current-password" required />
+      <button class="btn btn-primary btn-block" type="submit" data-i18n="login">تسجيل الدخول</button>
       <button class="btn btn-ghost btn-block" id="login-lang-btn" type="button">English</button>
     </form>
   </div>
@@ -37,11 +33,13 @@
         <span data-i18n="sidebarTitle">متابعة الموردين ومسحوبات عيادات الأسنان</span>
       </div>
       <button class="nav-btn active" data-page="dashboard" data-i18n="dashboard">لوحة التحكم</button>
-      <button class="nav-btn" data-page="warehouse" data-i18n="warehouse">المستودع</button>
+      <button class="nav-btn" data-page="requests" data-i18n="requests">الطلبات</button>
+      <button class="nav-btn" data-page="clinic-stock" data-nav-clinic data-i18n="clinicStocks">مخزون العيادات</button>
       <button class="nav-btn" data-page="withdrawals" data-i18n="withdrawals">مسحوبات العيادات</button>
-      <button class="nav-btn" data-page="supplies" data-i18n="dentalSupplies">مستلزمات الأسنان</button>
-      <button class="nav-btn" data-page="emergency" data-i18n="emergencySupplies">مستلزمات الطوارئ</button>
-      <button class="nav-btn" data-page="archive" data-i18n="archive">أرشيف</button>
+      <button class="nav-btn" data-page="warehouse" data-i18n="warehouse">المستودع</button>
+      <button class="nav-btn" data-page="supplies" data-manager-only data-i18n="dentalSupplies">مستلزمات الأسنان</button>
+      <button class="nav-btn" data-page="emergency" data-manager-only data-i18n="emergencySupplies">مستلزمات الطوارئ</button>
+      <button class="nav-btn" data-page="archive" data-manager-only data-i18n="archive">أرشيف</button>
     </aside>
 
     <div class="main">
@@ -59,15 +57,34 @@
       <div class="content">
         <section class="page active" id="page-dashboard">
           <h2 class="page-title" data-i18n="dashboard">لوحة التحكم</h2>
-          <div class="dash-cards" id="dash-cards"></div>
+          <div class="module-grid">
+            <button class="module-btn" type="button" data-module="requests"><span class="report-icon">📝</span><span data-i18n="requests">الطلبات</span><span class="module-count" id="request-count" hidden></span></button>
+            <button class="module-btn" type="button" data-module="clinic-stock"><span class="report-icon">🏥</span><span data-nav-clinic data-i18n="clinicStocks">مخزون العيادات</span></button>
+            <button class="module-btn" type="button" data-module="withdrawals"><span class="report-icon">📤</span><span data-i18n="withdrawals">المسحوبات</span></button>
+            <button class="module-btn" type="button" data-module="warehouse"><span class="report-icon">🏬</span><span data-i18n="warehouse">المستودع</span></button>
+          </div>
+          <div id="staff-alerts"></div>
+          <div class="dash-cards" id="dash-cards" data-manager-only></div>
           <div id="dash-detail" class="card dash-detail" hidden></div>
-          <div id="disposal-report" class="card dash-detail"></div>
-          <div class="reports">
+          <div id="disposal-report" class="card dash-detail" hidden></div>
+          <div class="reports" data-manager-only>
             <button class="report-btn" data-report="weekly" type="button"><span class="report-icon">📊</span><span data-i18n="weeklyReport">التقرير الأسبوعي</span></button>
             <button class="report-btn" data-report="monthly" type="button"><span class="report-icon">📈</span><span data-i18n="monthlyReport">التقرير الشهري</span></button>
             <button class="report-btn" data-report="yearly" type="button"><span class="report-icon">📁</span><span data-i18n="yearlyReport">التقرير السنوي</span></button>
+            <button class="report-btn" data-report="disposal" type="button"><span class="report-icon">🗑️</span><span data-i18n="disposalReport">تقرير الإتلاف</span></button>
           </div>
           <div class="clinic-report-list" id="clinic-report-list" hidden></div>
+        </section>
+
+        <section class="page" id="page-requests">
+          <h2 class="page-title" data-i18n="requests">الطلبات</h2>
+          <div class="subnav" id="request-tabs"></div>
+          <div id="request-panel"></div>
+        </section>
+
+        <section class="page" id="page-clinic-stock">
+          <h2 class="page-title" id="clinic-stock-title" data-i18n="clinicStocks">مخزون العيادات</h2>
+          <div id="clinic-stock-panel"></div>
         </section>
 
         <section class="page" id="page-withdrawals">
@@ -196,7 +213,7 @@
         </section>
       </div>
     </div>
-    <button class="btn btn-navy settings-btn" id="settings-btn" type="button" title="إعدادات">⚙️ <span data-i18n="settings">إعدادات</span></button>
+    <button class="btn btn-navy settings-btn" id="settings-btn" type="button" title="إعدادات" data-manager-only>⚙️ <span data-i18n="settings">إعدادات</span></button>
   </div>
 
   <div class="modal-overlay" id="modal">

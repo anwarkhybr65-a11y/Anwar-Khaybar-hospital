@@ -704,18 +704,130 @@ export async function fetchHospitalData() {
   return { connection, tables, datasets };
 }
 
+export function mapSupplyRequest(row) {
+  return {
+    id: row.id,
+    kind: row.kind || "internal",
+    clinicId: row.clinic_id || "",
+    productId: row.product_id || "",
+    productName: row.product_name || "",
+    quantity: Number(row.quantity) || 0,
+    expiryDate: row.expiry_date ? dateOnly(row.expiry_date) : "",
+    note: row.note || "",
+    status: row.status || "pending",
+    createdBy: row.created_by || "",
+    createdAt: row.created_at || "",
+    reviewedBy: row.reviewed_by || "",
+    reviewedAt: row.reviewed_at || "",
+    applied: row.applied === true,
+    saved: row.saved === true,
+  };
+}
+
+export function mapClinicStock(row) {
+  return {
+    id: row.id,
+    clinicId: row.clinic_id || "",
+    productId: row.product_id || "",
+    productName: row.product_name || "",
+    unit: row.unit || "",
+    quantity: Number(row.quantity) || 0,
+    expiryDate: row.expiry_date ? dateOnly(row.expiry_date) : "",
+  };
+}
+
+function supplyRequestPayload(row) {
+  return {
+    kind: row.kind,
+    clinic_id: row.clinicId || "",
+    product_id: String(row.productId || ""),
+    product_name: row.productName || "",
+    quantity: Number(row.quantity) || 0,
+    expiry_date: row.expiryDate || null,
+    note: row.note || "",
+    status: row.status || "pending",
+    created_by: row.createdBy || "",
+    reviewed_by: row.reviewedBy || "",
+    reviewed_at: row.reviewedAt || null,
+    applied: row.applied === true,
+    saved: row.saved === true,
+  };
+}
+
+function clinicStockPayload(row) {
+  return {
+    clinic_id: row.clinicId || "",
+    product_id: String(row.productId || ""),
+    product_name: row.productName || "",
+    unit: row.unit || "",
+    quantity: Number(row.quantity) || 0,
+    expiry_date: row.expiryDate || null,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+async function saveUuidRow(table, row, payload, mapFn) {
+  const withId = isUuid(row.id) ? { id: row.id, ...payload } : payload;
+  const query = isUuid(row.id)
+    ? supabase.from(table).upsert(withId).select().single()
+    : supabase.from(table).insert(payload).select().single();
+  const { data, error } = await query;
+  if (error && missingTable(error)) return { row, missing: true, error: null };
+  if (error || !data) return { row: null, missing: false, error: error ? error.message : "save failed" };
+  return { row: mapFn(data), missing: false, error: null };
+}
+
+export async function fetchSupplyRequests() {
+  return fetchOptional("supply_requests", mapSupplyRequest, { column: "created_at", ascending: false });
+}
+
+export async function saveSupplyRequest(row) {
+  return saveUuidRow("supply_requests", row, supplyRequestPayload(row), mapSupplyRequest);
+}
+
+export async function fetchClinicInventory() {
+  return fetchOptional("clinic_inventory", mapClinicStock, { column: "product_name", ascending: true });
+}
+
+export async function saveClinicStock(row) {
+  return saveUuidRow("clinic_inventory", row, clinicStockPayload(row), mapClinicStock);
+}
+
 export async function loginUser(username, password) {
   const { data, error } = await supabase.rpc("login_app_user", {
     p_username: username,
     p_password: password,
   });
   if (error) return { user: null, error: error.message };
-  const row = Array.isArray(data) ? data[0] : null;
+  const row = Array.isArray(data) ? data[0] : data;
   if (!row?.username) return { user: null, error: null };
+  if (row.is_banned === true) return { user: null, banned: true, error: null };
   return {
-    user: { username: row.username, letter: row.letter || "", color: row.color || "" },
+    user: {
+      username: row.username,
+      letter: row.letter || "",
+      color: row.color || "",
+      role: row.role || "admin",
+      clinicId: row.clinic_id || "",
+      staffKind: row.staff_kind || "",
+    },
     error: null,
   };
+}
+
+export async function listAppUsers(actor, password) {
+  const { data, error } = await supabase.rpc("list_app_users", {
+    p_actor: actor,
+    p_password: password,
+  });
+  if (error) return { users: [], error: error.message };
+  return { users: Array.isArray(data) ? data : [], error: null };
+}
+
+export async function manageAppUser(payload) {
+  const { data, error } = await supabase.rpc("manage_app_user", payload);
+  if (error) return { ok: false, error: error.message };
+  return data && typeof data === "object" ? data : { ok: false, error: "empty" };
 }
 
 export async function loadProcurementData() {
@@ -732,7 +844,7 @@ export async function loadProcurementData() {
       error: connection.message,
     };
   }
-  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames] =
+  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames, supplyRequests, clinicInventory] =
     await Promise.all([
       fetchSupplies(),
       fetchWithdrawals(),
@@ -745,6 +857,8 @@ export async function loadProcurementData() {
       fetchWithdrawalLog(),
       fetchDisposals(),
       fetchClinicNames(),
+      fetchSupplyRequests(),
+      fetchClinicInventory(),
     ]);
   const error =
     supplies.error ||
@@ -771,6 +885,8 @@ export async function loadProcurementData() {
     withdrawalLog,
     disposalLog,
     clinicNames,
+    supplyRequests,
+    clinicInventory,
     error,
   };
 }

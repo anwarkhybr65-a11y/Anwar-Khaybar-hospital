@@ -265,12 +265,66 @@ textarea { min-height: 84px; resize: vertical; }
   box-shadow: var(--shadow);
 }
 .card h3 { margin: 0 0 14px; }
+.module-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+  margin-bottom: 16px;
+  max-width: 980px;
+}
+.module-btn {
+  position: relative;
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 18px;
+  padding: 18px 10px;
+  cursor: pointer;
+  font-weight: 800;
+  color: var(--navy);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  box-shadow: var(--shadow);
+}
+.module-btn:hover { border-color: var(--teal); color: var(--teal); transform: translateY(-2px); }
+.module-btn .report-icon { font-size: 1.8rem; }
+.module-count[hidden] { display: none; }
+.module-count {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: #b42318;
+  color: #fff;
+  font-size: 12px;
+  display: grid;
+  place-items: center;
+  padding: 0 6px;
+}
+.clinic-alert {
+  border: 1px solid #f5c2c0;
+  background: #fff6f5;
+  color: #8a1c13;
+  border-radius: 12px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  font-weight: 700;
+}
+.request-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+body.role-staff #dash-cards,
+body.role-staff #dash-detail,
+body.role-staff #disposal-report,
+body.role-staff .reports,
+body.role-staff [data-manager-only] { display: none !important; }
 .reports {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10px;
   margin-bottom: 16px;
-  max-width: 780px;
+  max-width: 980px;
 }
 .report-btn {
   border: 1px solid var(--line);
@@ -517,7 +571,7 @@ th { color: var(--muted); font-size: 0.85rem; }
 }
 
 @media (max-width: 1100px) {
-  .stats, .grid-2, .form-grid, .reports, .record-grid, .dash-cards { grid-template-columns: 1fr; }
+  .stats, .grid-2, .form-grid, .reports, .module-grid, .record-grid, .dash-cards { grid-template-columns: 1fr; }
   .app.visible { grid-template-columns: 1fr; }
   .sidebar { flex-direction: row; flex-wrap: wrap; }
   .sidebar .logo { flex: 1 1 100%; justify-content: center; }

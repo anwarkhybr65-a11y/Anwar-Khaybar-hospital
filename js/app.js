@@ -14,8 +14,12 @@ import {
   insertVendor,
   insertWithdrawal,
   insertWithdrawalLog,
+  listAppUsers,
   loadProcurementData,
   loginUser,
+  manageAppUser,
+  saveClinicStock,
+  saveSupplyRequest,
   updateSupply,
   updateVendor,
   upsertClinicNames,
@@ -23,13 +27,6 @@ import {
 
 const KEY = "anwar-khaybar-procurement";
 const BACKUP_KEY = "anwar-khaybar-procurement-backup";
-
-const ACCOUNTS = [
-  { username: "يوسف الجهني", letter: "ي", color: "#0d6e6e" },
-  { username: "احمد الجيزاوي", letter: "أ", color: "#0b2c3d" },
-  { username: "الإدارة", letter: "إ", color: "#c9a227" },
-  { username: "خدمة العملاء", letter: "خ", color: "#1b8a5a" },
-];
 
 const CLINICS = [
   { id: "ahmed", ar: "عيادة دكتور أحمد", en: "Dr. Ahmed clinic", letter: "أ", color: "#0d6e6e" },
@@ -176,6 +173,59 @@ const I18N = {
     withdrawalsAmount: "إجمالي المسحوبات",
     lineTotal: "الإجمالي",
     unitPrice: "سعر الوحدة",
+    accountRole: "الدور",
+    requests: "الطلبات",
+    clinicStocks: "مخزون العيادات",
+    myClinicStock: "مخزون العيادة",
+    externalRequests: "طلبات خارجية",
+    internalRequests: "طلبات داخلية",
+    disposeRequest: "طلب إتلاف",
+    returnRequest: "إعادة إلى المستودع",
+    requestKind: "نوع الطلب",
+    requestStatus: "الحالة",
+    pending: "قيد الانتظار",
+    accepted: "مقبول",
+    rejected: "مرفوض",
+    accept: "قبول",
+    reject: "رفض",
+    editRequest: "تعديل",
+    saveRequest: "حفظ الطلب",
+    requestSaved: "تم حفظ الطلب",
+    sendRequest: "إرسال الطلب",
+    requestNote: "ملاحظة",
+    requestSent: "تم إرسال الطلب",
+    approvedWithdrawals: "المسحوبات المعتمدة",
+    warehouseStaffHint: "الأصناف المتوفرة في المستودع.",
+    availableItems: "الأصناف المتوفرة",
+    roleAdmin: "المسؤول",
+    roleDeputy: "النائب",
+    roleStaff: "طاقم العيادة",
+    roleDoctor: "طبيب",
+    roleNurse: "تمريض",
+    accountBanned: "هذا الحساب محظور",
+    passwordRule: "كلمة المرور يجب أن تكون 6 أرقام",
+    userAdmin: "إدارة الحسابات",
+    adminPassword: "كلمة مرور المسؤول",
+    showUsers: "عرض الحسابات",
+    addUser: "إضافة مستخدم",
+    banUser: "حظر",
+    unbanUser: "إلغاء الحظر",
+    resetPassword: "تغيير كلمة المرور",
+    staffKind: "الوظيفة",
+    newAccount: "بيانات الحساب الجديد",
+    passwordOnce: "انسخ كلمة المرور الآن، لن تظهر مرة أخرى.",
+    adminLimit: "لا يمكن إضافة أكثر من مسؤولين اثنين.",
+    deputyLimit: "يوجد نائب واحد بالفعل.",
+    staffLimit: "هذه الوظيفة موجودة مسبقاً لهذه العيادة.",
+    usersNeedSql: "نفّذ ملف sql/add_roles_and_requests.sql في Supabase لتفعيل إدارة الحسابات.",
+    clinicAlertClear: "لا توجد تنبيهات على مخزون العيادة.",
+    lowClinicStock: "الكمية المتبقية من {name} هي {qty}، والصنف قارب على النفاد.",
+    clinicExpiryAlert: "{name} تنتهي صلاحيته خلال {days} يوم.",
+    clinicExpiredAlert: "{name} منتهي الصلاحية.",
+    savedMark: "محفوظ",
+    confirmAccept: "هل تريد قبول هذا الطلب؟",
+    confirmReject: "هل تريد رفض هذا الطلب؟",
+    noRequestProducts: "لا توجد أصناف مطابقة لهذا النوع من الطلب.",
   },
   en: {
     hospitalName: "Anwar Khaybar Hospital",
@@ -315,6 +365,59 @@ const I18N = {
     withdrawalsAmount: "Withdrawals total",
     lineTotal: "Line total",
     unitPrice: "Unit price",
+    accountRole: "Role",
+    requests: "Requests",
+    clinicStocks: "Clinic inventory",
+    myClinicStock: "Clinic inventory",
+    externalRequests: "External requests",
+    internalRequests: "Internal requests",
+    disposeRequest: "Disposal request",
+    returnRequest: "Return to warehouse",
+    requestKind: "Request type",
+    requestStatus: "Status",
+    pending: "Pending",
+    accepted: "Accepted",
+    rejected: "Rejected",
+    accept: "Accept",
+    reject: "Reject",
+    editRequest: "Edit",
+    saveRequest: "Save request",
+    requestSaved: "Request saved",
+    sendRequest: "Send request",
+    requestNote: "Note",
+    requestSent: "Request sent",
+    approvedWithdrawals: "Approved withdrawals",
+    warehouseStaffHint: "Items available in the warehouse.",
+    availableItems: "Available items",
+    roleAdmin: "Admin",
+    roleDeputy: "Deputy",
+    roleStaff: "Clinic staff",
+    roleDoctor: "Doctor",
+    roleNurse: "Nurse",
+    accountBanned: "This account is banned",
+    passwordRule: "The password must be 6 digits",
+    userAdmin: "Account management",
+    adminPassword: "Admin password",
+    showUsers: "Show accounts",
+    addUser: "Add user",
+    banUser: "Ban",
+    unbanUser: "Unban",
+    resetPassword: "Change password",
+    staffKind: "Role in clinic",
+    newAccount: "New account",
+    passwordOnce: "Copy the password now. It will not be shown again.",
+    adminLimit: "There can be only two admins.",
+    deputyLimit: "A deputy already exists.",
+    staffLimit: "This clinic already has that staff role.",
+    usersNeedSql: "Run sql/add_roles_and_requests.sql in Supabase to enable account management.",
+    clinicAlertClear: "No clinic inventory alerts.",
+    lowClinicStock: "{name} has {qty} left and is running low.",
+    clinicExpiryAlert: "{name} expires in {days} days.",
+    clinicExpiredAlert: "{name} is expired.",
+    savedMark: "Saved",
+    confirmAccept: "Accept this request?",
+    confirmReject: "Reject this request?",
+    noRequestProducts: "No matching items for this request type.",
   },
 };
 
@@ -352,6 +455,8 @@ function seed() {
     priceHistory: [],
     disposals: [],
     clinicNames: {},
+    requests: [],
+    clinicStock: [],
   };
 }
 
@@ -500,6 +605,8 @@ function load() {
   if (!Array.isArray(data.deletedArchivePriceKeys)) data.deletedArchivePriceKeys = [];
   if (!Array.isArray(data.disposals)) data.disposals = [];
   if (!data.clinicNames || typeof data.clinicNames !== "object") data.clinicNames = {};
+  if (!Array.isArray(data.requests)) data.requests = [];
+  if (!Array.isArray(data.clinicStock)) data.clinicStock = [];
   recoverMissing(data);
   restoreSuppliers(data);
   save(data);
@@ -529,26 +636,69 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
   });
-  renderLoginIcons();
+  applyAccess();
 }
 
-function renderLoginIcons() {
-  const selected = document.getElementById("login-user").value;
-  document.getElementById("user-icons").innerHTML = ACCOUNTS.map(
-    (u) => `<button class="user-tile ${u.username === selected ? "selected" : ""}" type="button" data-user="${u.username}">
-      <span class="icon" style="background:${u.color}">${u.letter}</span>
-      <small>${u.username}</small>
-    </button>`
-  ).join("");
+function roleOf() {
+  return state.session?.role || "admin";
 }
 
-function selectLoginUser(username) {
-  document.getElementById("login-user").value = username;
-  document.getElementById("selected-user-label").textContent = username;
-  document.getElementById("login-pass-box").hidden = false;
-  document.getElementById("login-pass").value = "";
-  document.getElementById("login-pass").focus();
-  renderLoginIcons();
+function isStaff() {
+  return roleOf() === "staff";
+}
+
+function isAdmin() {
+  return roleOf() === "admin";
+}
+
+function isManager() {
+  return roleOf() === "admin" || roleOf() === "deputy";
+}
+
+function canSeePrices() {
+  return isManager();
+}
+
+function sessionClinic() {
+  return state.session?.clinicId || "";
+}
+
+function roleLabel() {
+  if (roleOf() === "deputy") return t("roleDeputy");
+  if (roleOf() === "staff") return state.session?.staffKind === "nurse" ? t("roleNurse") : t("roleDoctor");
+  return t("roleAdmin");
+}
+
+function applyAccess() {
+  const staff = Boolean(state.session) && isStaff();
+  document.body.classList.toggle("role-staff", staff);
+  document.querySelectorAll("[data-manager-only]").forEach((el) => {
+    el.hidden = staff;
+  });
+  document.querySelectorAll("[data-nav-clinic]").forEach((el) => {
+    el.textContent = staff ? t("myClinicStock") : t("clinicStocks");
+  });
+  const hint = document.querySelector("#page-warehouse [data-i18n='warehouseHint']");
+  if (hint) hint.textContent = staff ? t("warehouseStaffHint") : t("warehouseHint");
+  if (state.session) {
+    const name = state.session.username || "";
+    const nameEl = document.getElementById("user-name");
+    const initial = document.getElementById("user-initial");
+    if (nameEl) nameEl.textContent = `${name} — ${roleLabel()}`;
+    if (initial) initial.textContent = (state.session.letter || name).slice(0, 1);
+  }
+}
+
+const MANAGER_PAGES = new Set(["supplies", "emergency", "archive"]);
+
+function openPage(page) {
+  if (state.session && isStaff() && MANAGER_PAGES.has(page)) page = "dashboard";
+  document.querySelectorAll(".nav-btn").forEach((b) => b.classList.toggle("active", b.dataset.page === page));
+  document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
+  document.getElementById("page-" + page)?.classList.add("active");
+  if (page === "archive" && document.getElementById("archive-charts")?.classList.contains("active")) {
+    requestAnimationFrame(() => renderArchiveCharts());
+  }
 }
 
 function showApp(loggedIn) {
@@ -860,6 +1010,14 @@ function renderDashboardAlerts() {
   const cards = document.getElementById("dash-cards");
   const detail = document.getElementById("dash-detail");
   if (!cards || !detail) return;
+  if (!canSeePrices()) {
+    cards.innerHTML = "";
+    detail.hidden = true;
+    detail.innerHTML = "";
+    const report = document.getElementById("disposal-report");
+    if (report) report.innerHTML = "";
+    return;
+  }
   const low = lowStockItems().slice().sort((a, b) => trackedStock(a) - trackedStock(b));
   const expiring = expiryItems();
   const stockAlert = low.length ? t("lowStockCardAlert").replace("{count}", low.length) : t("lowStockCardClear");
@@ -1006,6 +1164,23 @@ function renderWarehouse() {
   const box = document.getElementById("warehouse-table");
   if (!box) return;
   const items = state.supplyItems.filter(isDental);
+  if (!canSeePrices()) {
+    const available = items.filter((item) => {
+      const stock = trackedStock(item);
+      return stock == null || stock > 0;
+    });
+    const rows = available.map((item) => {
+      const stock = trackedStock(item);
+      return `<tr>
+        <td>${escapeAttr(item.itemName)}</td>
+        <td>${escapeAttr(item.unit)}</td>
+        <td>${escapeAttr(item.type)}</td>
+        <td>${stock == null ? "—" : stock + " " + t("boxes")}</td>
+      </tr>`;
+    });
+    box.innerHTML = `<h3>${t("availableItems")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty")], rows)}`;
+    return;
+  }
   const rows = items.map((item) => {
     const stock = trackedStock(item);
     return `<tr>
@@ -1083,9 +1258,18 @@ function renderPriceDiffs() {
 }
 
 function renderSupplies() {
-  renderSupplyCategory();
+  if (canSeePrices()) renderSupplyCategory();
   renderWarehouse();
   renderDashboardAlerts();
+  if (!canSeePrices()) {
+    const dental = document.getElementById("table-dental");
+    const diffs = document.getElementById("price-diffs");
+    const vendors = document.getElementById("table-vendors");
+    if (dental) dental.innerHTML = "";
+    if (diffs) diffs.innerHTML = "";
+    if (vendors) vendors.innerHTML = "";
+    return;
+  }
   document.getElementById("table-vendors").innerHTML = table(
     [t("vendorName"), t("contactPerson"), t("phone"), t("email"), t("vendorNotes"), ""],
     state.suppliers.map(
@@ -1122,6 +1306,26 @@ function withdrawalRows(list) {
 function renderWithdrawals() {
   const nav = document.getElementById("clinic-subnav");
   const pages = document.getElementById("clinic-pages");
+  if (!nav || !pages) return;
+  if (!canSeePrices()) {
+    nav.innerHTML = "";
+    const list = (state.requests || []).filter(
+      (row) =>
+        row.status === "accepted" &&
+        row.clinicId === sessionClinic() &&
+        (row.kind === "internal" || row.kind === "external")
+    );
+    const rows = list.map(
+      (row) => `<tr>
+        <td>${escapeAttr(row.productName)}</td>
+        <td>${escapeAttr((row.reviewedAt || row.createdAt || "").slice(0, 10))}</td>
+        <td>${Number(row.quantity) || 0}</td>
+        <td>${t(row.kind === "external" ? "externalRequests" : "internalRequests")}</td>
+      </tr>`
+    );
+    pages.innerHTML = `<div class="card table-wrap"><h3>${t("approvedWithdrawals")}</h3>${table([t("itemName"), t("date"), t("quantity"), t("requestKind")], rows)}</div>`;
+    return;
+  }
   const active = document.querySelector("#clinic-subnav .subnav-btn.active")?.dataset.clinic || "ahmed";
   nav.innerHTML =
     CLINICS.map(
@@ -1289,10 +1493,30 @@ function reportLabel(kind) {
   return t("reportMonthly");
 }
 
+function showDisposalReport() {
+  const box = document.getElementById("disposal-report");
+  const btn = document.querySelector('[data-report="disposal"]');
+  const wasOpen = btn?.classList.contains("active");
+  document.querySelectorAll("[data-report]").forEach((item) => item.classList.remove("active"));
+  const listEl = document.getElementById("clinic-report-list");
+  if (listEl) listEl.hidden = true;
+  if (!box) return;
+  if (wasOpen) {
+    box.hidden = true;
+    return;
+  }
+  btn?.classList.add("active");
+  box.hidden = false;
+  renderDisposalReport();
+  box.scrollIntoView({ block: "nearest" });
+}
+
 function showClinicReports(kind) {
   document.querySelectorAll("[data-report]").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.report === kind);
   });
+  const disposal = document.getElementById("disposal-report");
+  if (disposal) disposal.hidden = true;
   const listEl = document.getElementById("clinic-report-list");
   listEl.hidden = false;
   listEl.innerHTML = CLINICS.map(
@@ -1617,9 +1841,486 @@ function drawCompareChart() {
 }
 
 function renderArchive() {
+  if (!canSeePrices()) {
+    const files = document.getElementById("archive-files");
+    const prices = document.getElementById("archive-prices-table");
+    if (files) files.innerHTML = "";
+    if (prices) prices.innerHTML = "";
+    return;
+  }
   renderArchiveWithdrawals();
   renderArchivePrices();
   renderArchiveCharts();
+}
+
+let requestTab = "external";
+
+function clinicRows(clinicId) {
+  return (state.clinicStock || []).filter((row) => row.clinicId === clinicId && Number(row.quantity) > 0);
+}
+
+function requestKindLabel(kind) {
+  if (kind === "external") return t("externalRequests");
+  if (kind === "dispose") return t("disposeRequest");
+  if (kind === "return") return t("returnRequest");
+  return t("internalRequests");
+}
+
+function requestStatusLabel(status) {
+  if (status === "accepted") return t("accepted");
+  if (status === "rejected") return t("rejected");
+  return t("pending");
+}
+
+function catalogPrice(productId) {
+  const item = state.supplyItems.find((row) => String(row.id) === String(productId));
+  if (!item) return "—";
+  return `${itemPrice(item)} ${t("currency")}`;
+}
+
+function clinicAlertLines(row) {
+  const lines = [];
+  if (Number(row.quantity) < 6) {
+    lines.push(t("lowClinicStock").replace("{name}", row.productName).replace("{qty}", row.quantity));
+  }
+  const days = daysUntil(row.expiryDate);
+  if (days != null && days < 0) lines.push(t("clinicExpiredAlert").replace("{name}", row.productName));
+  else if (days != null && days <= EXPIRY_WINDOW_DAYS) lines.push(t("clinicExpiryAlert").replace("{name}", row.productName).replace("{days}", days));
+  return lines;
+}
+
+function clinicTable(rows) {
+  const headers = [t("itemName"), t("unitSize"), t("quantity"), t("expiryDate"), t("daysLeft")];
+  if (canSeePrices()) headers.push(t("price"));
+  const body = rows.map((row) => {
+    const price = canSeePrices() ? `<td>${catalogPrice(row.productId)}</td>` : "";
+    return `<tr>
+      <td>${escapeAttr(row.productName)}</td>
+      <td>${escapeAttr(row.unit)}</td>
+      <td class="${Number(row.quantity) < 6 ? "stock-low" : ""}">${row.quantity}</td>
+      <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
+      <td>${daysLabel(row.expiryDate)}</td>
+      ${price}
+    </tr>`;
+  });
+  return table(headers, body);
+}
+
+function renderStaffAlerts() {
+  const box = document.getElementById("staff-alerts");
+  if (!box) return;
+  if (!isStaff()) {
+    box.innerHTML = "";
+    return;
+  }
+  const lines = clinicRows(sessionClinic()).flatMap(clinicAlertLines);
+  box.innerHTML = lines.length
+    ? lines.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")
+    : `<p class="empty">${t("clinicAlertClear")}</p>`;
+}
+
+function renderClinicStock() {
+  const title = document.getElementById("clinic-stock-title");
+  const panel = document.getElementById("clinic-stock-panel");
+  if (!panel) return;
+  if (isStaff()) {
+    if (title) title.textContent = t("myClinicStock");
+    const rows = clinicRows(sessionClinic());
+    const alerts = rows.flatMap(clinicAlertLines);
+    panel.innerHTML = `
+      ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
+      <div class="card table-wrap"><h3>${escapeAttr(clinicName(sessionClinic()))}</h3>${rows.length ? clinicTable(rows) : `<p class="empty">${t("noData")}</p>`}</div>`;
+    renderStaffAlerts();
+    return;
+  }
+  if (title) title.textContent = t("clinicStocks");
+  panel.innerHTML = CLINICS.map((clinic) => {
+    const rows = clinicRows(clinic.id);
+    const alerts = rows.flatMap(clinicAlertLines);
+    return `<div class="card table-wrap">
+      <h3>${escapeAttr(clinicName(clinic.id))}</h3>
+      ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
+      ${rows.length ? clinicTable(rows) : `<p class="empty">${t("noData")}</p>`}
+    </div>`;
+  }).join("");
+  renderStaffAlerts();
+}
+
+function requestChoices(kind) {
+  if (kind === "dispose" || kind === "return") {
+    return clinicRows(sessionClinic())
+      .filter((row) => {
+        const days = daysUntil(row.expiryDate);
+        if (days == null) return false;
+        return kind === "dispose" ? days < 0 : days >= 0 && days <= EXPIRY_WINDOW_DAYS;
+      })
+      .map((row) => ({
+        value: row.id,
+        label: `${row.productName} — ${row.quantity} — ${row.expiryDate || ""}`,
+        max: Number(row.quantity) || 1,
+      }));
+  }
+  return state.supplyItems
+    .filter(isDental)
+    .filter((item) => {
+      if (kind !== "internal") return true;
+      const stock = trackedStock(item);
+      return stock == null || stock > 0;
+    })
+    .map((item) => {
+      const stock = trackedStock(item);
+      const note = kind === "internal" && stock != null ? ` — ${stock} ${t("boxes")}` : "";
+      return { value: item.id, label: `${item.itemName}${note}`, max: "" };
+    });
+}
+
+function requestActions(row) {
+  if (!isManager()) return "";
+  const id = escapeAttr(row.id);
+  const review = row.status === "pending"
+    ? `<button class="btn btn-sm btn-primary" type="button" data-accept-request="${id}">${t("accept")}</button>
+       <button class="btn btn-sm btn-danger" type="button" data-reject-request="${id}">${t("reject")}</button>
+       <button class="btn btn-sm btn-navy" type="button" data-edit-request="${id}">${t("editRequest")}</button>`
+    : "";
+  return `<div class="request-actions">${review}
+    <button class="btn btn-sm" type="button" data-print-request="${id}">${t("print")}</button>
+    <button class="btn btn-sm btn-navy" type="button" data-save-request="${id}">${t("saveRequest")}</button>
+  </div>`;
+}
+
+function renderRequests() {
+  const tabs = document.getElementById("request-tabs");
+  const panel = document.getElementById("request-panel");
+  const pill = document.getElementById("request-count");
+  if (pill) {
+    const pendingCount = (state.requests || []).filter((row) => row.status === "pending").length;
+    pill.hidden = !isManager() || !pendingCount;
+    pill.textContent = String(pendingCount);
+  }
+  if (!tabs || !panel) return;
+  tabs.innerHTML = [
+    ["external", "externalRequests"],
+    ["internal", "internalRequests"],
+    ["dispose", "disposeRequest"],
+    ["return", "returnRequest"],
+  ]
+    .map(([kind, key]) => `<button class="subnav-btn ${requestTab === kind ? "active" : ""}" type="button" data-request-tab="${kind}">${t(key)}</button>`)
+    .join("");
+  const choices = isStaff() ? requestChoices(requestTab) : [];
+  const form = isStaff()
+    ? `<div class="card"><h3>${t("sendRequest")}</h3>
+        ${choices.length ? `<form class="form-grid" data-request-form>
+          <div><label>${t("itemName")}</label><select name="itemId" required>${choices.map((choice) => `<option value="${escapeAttr(choice.value)}">${escapeAttr(choice.label)}</option>`).join("")}</select></div>
+          <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+          <div class="full"><label>${t("requestNote")}</label><input name="note" /></div>
+          <div class="full"><button class="btn btn-primary" type="submit">${t("sendRequest")}</button></div>
+        </form>` : `<p class="empty">${t("noRequestProducts")}</p>`}
+      </div>`
+    : "";
+  const list = (state.requests || []).filter((row) => row.kind === requestTab && (!isStaff() || row.clinicId === sessionClinic()));
+  const headers = isManager()
+    ? [t("clinic"), t("itemName"), t("quantity"), t("expiryDate"), t("requestNote"), t("requestStatus"), ""]
+    : [t("itemName"), t("quantity"), t("expiryDate"), t("requestStatus")];
+  const rows = list.map((row) => {
+    const status = `${requestStatusLabel(row.status)}${row.saved ? ` · ${t("savedMark")}` : ""}`;
+    if (!isManager()) {
+      return `<tr>
+        <td>${escapeAttr(row.productName)}</td>
+        <td>${Number(row.quantity) || 0}</td>
+        <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
+        <td>${escapeAttr(status)}</td>
+      </tr>`;
+    }
+    return `<tr>
+      <td>${escapeAttr(clinicName(row.clinicId))}</td>
+      <td>${escapeAttr(row.productName)}</td>
+      <td>${Number(row.quantity) || 0}</td>
+      <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
+      <td>${escapeAttr(row.note || "")}</td>
+      <td>${escapeAttr(status)}</td>
+      <td>${requestActions(row)}</td>
+    </tr>`;
+  });
+  panel.innerHTML = `${form}<div class="card table-wrap"><h3>${requestKindLabel(requestTab)}</h3>${table(headers, rows)}</div>`;
+}
+
+async function persistRequest(req) {
+  const saved = await saveSupplyRequest(req);
+  if (saved.error) {
+    notifyDbError(saved.error);
+    return false;
+  }
+  if (saved.row) Object.assign(req, saved.row);
+  persist();
+  return true;
+}
+
+async function changeClinicStock(clinicId, productId, expiryDate, delta, meta) {
+  if (!Array.isArray(state.clinicStock)) state.clinicStock = [];
+  const expiry = expiryDate || "";
+  let row = state.clinicStock.find(
+    (item) => item.clinicId === clinicId && String(item.productId) === String(productId) && (item.expiryDate || "") === expiry
+  );
+  if (!row) {
+    if (delta < 0) return false;
+    row = {
+      id: crypto.randomUUID(),
+      clinicId,
+      productId: String(productId || ""),
+      productName: meta?.productName || "",
+      unit: meta?.unit || "",
+      quantity: 0,
+      expiryDate: expiry,
+    };
+    state.clinicStock.push(row);
+  }
+  const previous = Number(row.quantity) || 0;
+  const next = previous + delta;
+  if (next < 0) return false;
+  row.quantity = next;
+  const saved = await saveClinicStock(row);
+  if (saved.error) {
+    row.quantity = previous;
+    notifyDbError(saved.error);
+    return false;
+  }
+  if (saved.row) Object.assign(row, saved.row, { quantity: next });
+  return true;
+}
+
+async function submitRequest(form) {
+  if (!isStaff() || !sessionClinic()) return;
+  const data = new FormData(form);
+  const qty = Number(data.get("quantity"));
+  if (!qty || qty < 1) return;
+  const itemId = data.get("itemId");
+  let productId = "";
+  let productName = "";
+  let expiryDate = "";
+  if (requestTab === "dispose" || requestTab === "return") {
+    const stock = (state.clinicStock || []).find((row) => row.id === itemId && row.clinicId === sessionClinic());
+    if (!stock || qty > Number(stock.quantity)) {
+      alert(t("insufficientStock"));
+      return;
+    }
+    productId = stock.productId;
+    productName = stock.productName;
+    expiryDate = stock.expiryDate || "";
+  } else {
+    const product = state.supplyItems.find((item) => String(item.id) === String(itemId));
+    if (!product) return;
+    productId = product.id;
+    productName = product.itemName;
+    expiryDate = product.expiryDate || "";
+  }
+  const row = {
+    id: crypto.randomUUID(),
+    kind: requestTab,
+    clinicId: sessionClinic(),
+    productId,
+    productName,
+    quantity: qty,
+    expiryDate,
+    note: String(data.get("note") || "").trim(),
+    status: "pending",
+    createdBy: state.session?.username || "",
+    createdAt: new Date().toISOString(),
+    reviewedBy: "",
+    reviewedAt: "",
+    applied: false,
+    saved: false,
+  };
+  const saved = await saveSupplyRequest(row);
+  if (saved.error) {
+    notifyDbError(saved.error);
+    return;
+  }
+  state.requests.unshift(saved.row || row);
+  persist();
+  alert(t("requestSent"));
+}
+
+async function acceptRequest(id) {
+  const req = (state.requests || []).find((row) => row.id === id);
+  if (!req || !isManager() || req.status !== "pending" || req.applied) return;
+  if (!confirm(t("confirmAccept"))) return;
+  const qty = Number(req.quantity) || 0;
+  const product = state.supplyItems.find((item) => String(item.id) === String(req.productId));
+  const meta = { productName: req.productName, unit: product?.unit || "" };
+  const expiry = req.expiryDate || product?.expiryDate || "";
+  if (req.kind === "internal") {
+    if (!product) {
+      alert(t("noData"));
+      return;
+    }
+    const moved = await adjustDentalStock(product, -qty);
+    if (!moved.ok) {
+      alert(moved.error || t("insufficientStock"));
+      return;
+    }
+    const added = await changeClinicStock(req.clinicId, req.productId, expiry, qty, meta);
+    if (!added) {
+      await adjustDentalStock(product, qty);
+      return;
+    }
+  } else if (req.kind === "external") {
+    const added = await changeClinicStock(req.clinicId, req.productId, expiry, qty, meta);
+    if (!added) return;
+  } else if (req.kind === "return") {
+    if (product) {
+      const moved = await adjustDentalStock(product, qty);
+      if (!moved.ok) {
+        alert(moved.error || t("stockRequired"));
+        return;
+      }
+    }
+    const reduced = await changeClinicStock(req.clinicId, req.productId, req.expiryDate || "", -qty, meta);
+    if (!reduced) {
+      if (product) await adjustDentalStock(product, -qty);
+      alert(t("insufficientStock"));
+      return;
+    }
+  } else if (req.kind === "dispose") {
+    const reduced = await changeClinicStock(req.clinicId, req.productId, req.expiryDate || "", -qty, meta);
+    if (!reduced) {
+      alert(t("insufficientStock"));
+      return;
+    }
+    const saved = await insertDisposal({
+      productId: req.productId,
+      productName: req.productName,
+      unit: product?.unit || "",
+      type: product?.type || "",
+      supplierName: product ? supplierById(product.supplierId)?.name || "" : "",
+      quantity: qty,
+      unitPrice: product ? itemPrice(product) : 0,
+      reason: "expired",
+      expiryDate: req.expiryDate || "",
+      disposedAt: todayISO(),
+    });
+    if (saved.error || !saved.row) {
+      await changeClinicStock(req.clinicId, req.productId, req.expiryDate || "", qty, meta);
+      notifyDbError(saved.error);
+      return;
+    }
+    if (!Array.isArray(state.disposals)) state.disposals = [];
+    state.disposals.unshift(saved.row);
+  }
+  req.status = "accepted";
+  req.applied = true;
+  req.reviewedBy = state.session?.username || "";
+  req.reviewedAt = new Date().toISOString();
+  await persistRequest(req);
+}
+
+async function rejectRequest(id) {
+  const req = (state.requests || []).find((row) => row.id === id);
+  if (!req || !isManager() || req.status !== "pending") return;
+  if (!confirm(t("confirmReject"))) return;
+  req.status = "rejected";
+  req.reviewedBy = state.session?.username || "";
+  req.reviewedAt = new Date().toISOString();
+  await persistRequest(req);
+}
+
+function printRequest(id) {
+  const req = (state.requests || []).find((row) => row.id === id);
+  if (!req) return;
+  printHtml(
+    `<table>
+      <tr><th>${t("requestKind")}</th><td>${requestKindLabel(req.kind)}</td></tr>
+      <tr><th>${t("clinic")}</th><td>${escapeAttr(clinicName(req.clinicId))}</td></tr>
+      <tr><th>${t("itemName")}</th><td>${escapeAttr(req.productName)}</td></tr>
+      <tr><th>${t("quantity")}</th><td>${Number(req.quantity) || 0}</td></tr>
+      <tr><th>${t("expiryDate")}</th><td>${escapeAttr(req.expiryDate || t("noExpiry"))}</td></tr>
+      <tr><th>${t("requestNote")}</th><td>${escapeAttr(req.note || "")}</td></tr>
+      <tr><th>${t("requestStatus")}</th><td>${requestStatusLabel(req.status)}</td></tr>
+    </table>`,
+    t("requests")
+  );
+}
+
+function openEditRequest(id) {
+  const req = (state.requests || []).find((row) => row.id === id);
+  if (!req || !isManager()) return;
+  openModal(`
+    <h3>${t("editRequest")}</h3>
+    <form class="form-grid" id="request-edit-form">
+      <input type="hidden" name="id" value="${escapeAttr(req.id)}" />
+      <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" value="${Number(req.quantity) || 1}" required /></div>
+      <div class="full"><label>${t("requestNote")}</label><input name="note" value="${escapeAttr(req.note || "")}" /></div>
+      <div class="full"><button class="btn btn-primary" type="submit">${t("saveRequest")}</button></div>
+    </form>
+  `);
+}
+
+function userAdminMessage(code) {
+  const text = String(code || "");
+  if (/admin_limit/.test(text)) return t("adminLimit");
+  if (/deputy_limit/.test(text)) return t("deputyLimit");
+  if (/staff_limit/.test(text)) return t("staffLimit");
+  if (/admin_required/.test(text)) return t("loginError");
+  if (/list_app_users|manage_app_user|schema cache|Could not find the function/i.test(text)) return t("usersNeedSql");
+  return text;
+}
+
+function renderUserTable(users) {
+  const box = document.getElementById("user-admin-result");
+  if (!box) return;
+  const rows = (users || []).map((user) => {
+    const role = user.role === "deputy" ? t("roleDeputy") : user.role === "staff" ? (user.staffKind === "nurse" ? t("roleNurse") : t("roleDoctor")) : t("roleAdmin");
+    const clinic = user.clinicId ? clinicName(user.clinicId) : "";
+    const banLabel = user.banned ? t("unbanUser") : t("banUser");
+    const action = user.banned ? "unban" : "ban";
+    return `<tr>
+      <td>${escapeAttr(user.username)}</td>
+      <td>${escapeAttr(role)}</td>
+      <td>${escapeAttr(clinic)}</td>
+      <td>${user.banned ? t("accountBanned") : t("accepted")}</td>
+      <td>
+        <button class="btn btn-sm btn-danger" type="button" data-user-action="${action}" data-user-target="${escapeAttr(user.username)}">${banLabel}</button>
+        <button class="btn btn-sm btn-navy" type="button" data-user-action="reset" data-user-target="${escapeAttr(user.username)}">${t("resetPassword")}</button>
+      </td>
+    </tr>`;
+  });
+  box.innerHTML = table([t("username"), t("accountRole"), t("clinic"), t("requestStatus"), ""], rows);
+}
+
+function showNewCredentials(username, password) {
+  const box = document.getElementById("user-admin-result");
+  if (!box) return;
+  box.innerHTML = `<div class="card">
+    <h3>${t("newAccount")}</h3>
+    <p>${t("username")}: <strong>${escapeAttr(username)}</strong></p>
+    <p>${t("password")}: <strong>${escapeAttr(password)}</strong></p>
+    <p>${t("passwordOnce")}</p>
+  </div>`;
+}
+
+function userAdminHtml() {
+  if (!isAdmin()) return "";
+  const clinics = CLINICS.map((clinic) => `<option value="${clinic.id}">${escapeAttr(clinicName(clinic.id))}</option>`).join("");
+  return `
+    <h3>${t("userAdmin")}</h3>
+    <form class="form-grid" id="user-auth-form">
+      <div class="full"><label>${t("adminPassword")}</label><input id="admin-pass" type="password" inputmode="numeric" maxlength="6" required /></div>
+      <div class="full"><button class="btn btn-navy" type="submit">${t("showUsers")}</button></div>
+    </form>
+    <div id="user-admin-result"></div>
+    <form class="form-grid" id="user-create-form">
+      <div><label>${t("roleAdmin")} / ${t("roleDeputy")} / ${t("roleStaff")}</label>
+        <select id="new-user-role" name="role">
+          <option value="admin">${t("roleAdmin")}</option>
+          <option value="deputy">${t("roleDeputy")}</option>
+          <option value="staff">${t("roleStaff")}</option>
+        </select>
+      </div>
+      <div id="new-user-clinic-wrap" hidden><label>${t("clinic")}</label><select name="clinicId">${clinics}</select></div>
+      <div id="new-user-kind-wrap" hidden><label>${t("staffKind")}</label>
+        <select name="staffKind"><option value="doctor">${t("roleDoctor")}</option><option value="nurse">${t("roleNurse")}</option></select>
+      </div>
+      <div class="full"><button class="btn btn-primary" type="submit">${t("addUser")}</button></div>
+    </form>`;
 }
 
 function renderAll() {
@@ -1628,19 +2329,20 @@ function renderAll() {
   renderSupplies();
   renderWithdrawals();
   renderArchive();
+  renderRequests();
+  renderClinicStock();
 }
-
-document.getElementById("user-icons").addEventListener("click", (e) => {
-  const tile = e.target.closest("[data-user]");
-  if (tile) selectLoginUser(tile.dataset.user);
-});
 
 document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.currentTarget;
-  const user = document.getElementById("login-user").value;
+  const user = document.getElementById("login-user").value.trim();
   const pass = document.getElementById("login-pass").value;
   if (!user || !pass) return;
+  if (!/^\d{6}$/.test(pass)) {
+    alert(t("passwordRule"));
+    return;
+  }
   const submitBtn = form.querySelector('button[type="submit"]');
   if (submitBtn) submitBtn.disabled = true;
   const result = await loginUser(user, pass);
@@ -1650,11 +2352,22 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
     alert(t("loginServerError"));
     return;
   }
+  if (result.banned) {
+    alert(t("accountBanned"));
+    return;
+  }
   if (!result.user) {
     alert(t("loginError"));
     return;
   }
-  state.session = { username: result.user.username };
+  state.session = {
+    username: result.user.username,
+    letter: result.user.letter || "",
+    color: result.user.color || "",
+    role: result.user.role || "admin",
+    clinicId: result.user.clinicId || "",
+    staffKind: result.user.staffKind || "",
+  };
   save(state);
   startSession();
 });
@@ -1664,8 +2377,6 @@ document.getElementById("logout-btn").addEventListener("click", () => {
   persist();
   document.getElementById("login-user").value = "";
   document.getElementById("login-pass").value = "";
-  document.getElementById("login-pass-box").hidden = true;
-  renderLoginIcons();
   showApp(false);
 });
 
@@ -1680,15 +2391,7 @@ document.getElementById("login-lang-btn").addEventListener("click", () => {
 });
 
 document.querySelectorAll(".nav-btn").forEach((btn) => {
-  btn.addEventListener("click", () => {
-    document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
-    btn.classList.add("active");
-    document.querySelectorAll(".page").forEach((p) => p.classList.remove("active"));
-    document.getElementById("page-" + btn.dataset.page).classList.add("active");
-    if (btn.dataset.page === "archive" && document.getElementById("archive-charts")?.classList.contains("active")) {
-      requestAnimationFrame(() => renderArchiveCharts());
-    }
-  });
+  btn.addEventListener("click", () => openPage(btn.dataset.page));
 });
 
 document.querySelectorAll("#page-archive [data-archive]").forEach((btn) => {
@@ -1849,6 +2552,11 @@ document.getElementById("clinic-subnav").addEventListener("click", (e) => {
 });
 
 document.getElementById("page-dashboard").addEventListener("click", async (e) => {
+  const moduleBtn = e.target.closest("[data-module]");
+  if (moduleBtn) {
+    openPage(moduleBtn.dataset.module);
+    return;
+  }
   const panelBtn = e.target.closest("[data-dash-panel]");
   if (panelBtn) {
     const next = panelBtn.dataset.dashPanel;
@@ -1870,7 +2578,54 @@ document.getElementById("page-dashboard").addEventListener("click", async (e) =>
 });
 
 document.querySelectorAll("[data-report]").forEach((btn) => {
-  btn.addEventListener("click", () => showClinicReports(btn.dataset.report));
+  btn.addEventListener("click", () => {
+    if (btn.dataset.report === "disposal") showDisposalReport();
+    else showClinicReports(btn.dataset.report);
+  });
+});
+
+document.getElementById("page-requests").addEventListener("click", async (e) => {
+  const tab = e.target.closest("[data-request-tab]");
+  if (tab) {
+    requestTab = tab.dataset.requestTab;
+    renderRequests();
+    return;
+  }
+  const acceptBtn = e.target.closest("[data-accept-request]");
+  if (acceptBtn) {
+    await acceptRequest(acceptBtn.dataset.acceptRequest);
+    return;
+  }
+  const rejectBtn = e.target.closest("[data-reject-request]");
+  if (rejectBtn) {
+    await rejectRequest(rejectBtn.dataset.rejectRequest);
+    return;
+  }
+  const editBtn = e.target.closest("[data-edit-request]");
+  if (editBtn) {
+    openEditRequest(editBtn.dataset.editRequest);
+    return;
+  }
+  const printBtn = e.target.closest("[data-print-request]");
+  if (printBtn) {
+    printRequest(printBtn.dataset.printRequest);
+    return;
+  }
+  const saveBtn = e.target.closest("[data-save-request]");
+  if (saveBtn) {
+    const req = (state.requests || []).find((row) => row.id === saveBtn.dataset.saveRequest);
+    if (!req || !isManager()) return;
+    req.saved = true;
+    const ok = await persistRequest(req);
+    if (ok) alert(t("requestSaved"));
+  }
+});
+
+document.getElementById("page-requests").addEventListener("submit", async (e) => {
+  const form = e.target.closest("[data-request-form]");
+  if (!form) return;
+  e.preventDefault();
+  await submitRequest(form);
 });
 
 document.getElementById("clinic-report-list").addEventListener("click", (e) => {
@@ -1933,10 +2688,91 @@ document.getElementById("vendor-form").addEventListener("submit", async (e) => {
 });
 
 document.getElementById("modal-close").addEventListener("click", closeModal);
-document.getElementById("modal").addEventListener("click", (e) => {
+document.getElementById("modal").addEventListener("click", async (e) => {
   if (e.target.id === "modal") closeModal();
+  const userBtn = e.target.closest("[data-user-action]");
+  if (!userBtn) return;
+  const password = document.getElementById("admin-pass")?.value || "";
+  if (!/^\d{6}$/.test(password)) {
+    alert(t("passwordRule"));
+    return;
+  }
+  const action = userBtn.dataset.userAction;
+  const target = userBtn.dataset.userTarget;
+  if (target === state.session?.username) return;
+  const result = await manageAppUser({
+    p_actor: state.session?.username || "",
+    p_password: password,
+    p_action: action,
+    p_target: target,
+  });
+  if (result.error || result.ok === false) {
+    alert(userAdminMessage(result.message || result.error));
+    return;
+  }
+  if (action === "reset" && result.password) showNewCredentials(result.username || target, result.password);
+  else {
+    const listed = await listAppUsers(state.session?.username || "", password);
+    if (listed.error) alert(userAdminMessage(listed.error));
+    else renderUserTable(listed.users);
+  }
+});
+document.getElementById("modal").addEventListener("change", (e) => {
+  if (e.target.id !== "new-user-role") return;
+  const staff = e.target.value === "staff";
+  const clinicWrap = document.getElementById("new-user-clinic-wrap");
+  const kindWrap = document.getElementById("new-user-kind-wrap");
+  if (clinicWrap) clinicWrap.hidden = !staff;
+  if (kindWrap) kindWrap.hidden = !staff;
 });
 document.getElementById("modal").addEventListener("submit", async (e) => {
+  if (e.target.id === "user-auth-form") {
+    e.preventDefault();
+    const password = document.getElementById("admin-pass")?.value || "";
+    const listed = await listAppUsers(state.session?.username || "", password);
+    if (listed.error) {
+      alert(userAdminMessage(listed.error));
+      return;
+    }
+    renderUserTable(listed.users);
+    return;
+  }
+  if (e.target.id === "user-create-form") {
+    e.preventDefault();
+    const password = document.getElementById("admin-pass")?.value || "";
+    if (!/^\d{6}$/.test(password)) {
+      alert(t("passwordRule"));
+      return;
+    }
+    const data = new FormData(e.target);
+    const role = data.get("role");
+    const result = await manageAppUser({
+      p_actor: state.session?.username || "",
+      p_password: password,
+      p_action: "create",
+      p_role: role,
+      p_clinic_id: role === "staff" ? data.get("clinicId") : "",
+      p_staff_kind: role === "staff" ? data.get("staffKind") : "",
+    });
+    if (result.error || result.ok === false) {
+      alert(userAdminMessage(result.message || result.error));
+      return;
+    }
+    showNewCredentials(result.username, result.password);
+    return;
+  }
+  if (e.target.id === "request-edit-form") {
+    e.preventDefault();
+    const data = new FormData(e.target);
+    const req = (state.requests || []).find((row) => row.id === data.get("id"));
+    if (!req || !isManager()) return;
+    req.quantity = Number(data.get("quantity")) || req.quantity;
+    req.note = String(data.get("note") || "").trim();
+    req.saved = true;
+    closeModal();
+    await persistRequest(req);
+    return;
+  }
   if (e.target.id === "clinic-names-form") {
     e.preventDefault();
     const data = new FormData(e.target);
@@ -2079,6 +2915,18 @@ async function pushList(rows, insertFn) {
     uploaded.push(result.row);
   }
   return { rows: uploaded, error: null };
+}
+
+async function mergeRemoteRows(localRows, cloudRows, saveFn) {
+  const byId = new Map((cloudRows || []).map((row) => [String(row.id), row]));
+  for (const row of localRows || []) {
+    if (!row?.id || byId.has(String(row.id))) continue;
+    const saved = await saveFn(row);
+    if (saved?.error) continue;
+    const next = saved?.row || row;
+    if (next?.id) byId.set(String(next.id), next);
+  }
+  return [...byId.values()];
 }
 
 async function uploadLocalRows(rows, insertFn) {
@@ -2251,6 +3099,17 @@ async function hydrateFromDatabase() {
     else if (Object.keys(state.clinicNames).length) await upsertClinicNames(state.clinicNames);
   }
 
+  if (!Array.isArray(state.requests)) state.requests = [];
+  if (!Array.isArray(state.clinicStock)) state.clinicStock = [];
+  const requestCloud = result.supplyRequests;
+  if (requestCloud && !requestCloud.missing && !requestCloud.error) {
+    state.requests = await mergeRemoteRows(state.requests, requestCloud.rows || [], saveSupplyRequest);
+  }
+  const stockCloud = result.clinicInventory;
+  if (stockCloud && !stockCloud.missing && !stockCloud.error) {
+    state.clinicStock = await mergeRemoteRows(state.clinicStock, stockCloud.rows || [], saveClinicStock);
+  }
+
   const cloudVendors = result.vendors || [];
   restoreSuppliers(state);
   if (cloudVendors.length) {
@@ -2282,6 +3141,7 @@ function settingsDbHtml() {
       ${fields}
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveClinicNames")}</button></div>
     </form>
+    ${userAdminHtml()}
     <h3>${t("hospitalData")}</h3>
     <p class="empty">${dbStatusText || t("supabaseConnected")}</p>
   `;
