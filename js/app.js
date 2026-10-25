@@ -2358,7 +2358,7 @@ async function acceptRequest(id) {
       return;
     }
   } else if (req.kind === "external") {
-    const added = await changeClinicStock(req.clinicId, req.productId, expiry, qty, meta);
+    const added = await changeClinicStock(req.clinicId, req.productId, externalItem?.expiryDate || expiry, qty, meta);
     if (!added) return;
   } else if (req.kind === "return") {
     if (product) {
@@ -2532,12 +2532,14 @@ function renderExternalSupplies() {
           <div><label>${t("itemType")}</label><input name="type" required /></div>
           <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
           <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
+          <div><label>${t("quantity")}</label><input name="stock" type="number" min="0" step="1" required /></div>
+          <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
       </div>`
     : "";
   const headers = canSeePrices()
-    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), ""]
+    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("quantity"), t("expiryDate"), ""]
     : [t("itemName"), t("unitSize"), t("itemType")];
   const rows = items.map((item) => {
     const supplier = item.supplierName || supplierById(item.supplierId)?.name || "";
@@ -2550,6 +2552,8 @@ function renderExternalSupplies() {
       <td>${escapeAttr(item.type)}</td>
       <td>${escapeAttr(supplier)}</td>
       <td>${Number(item.price) || 0} ${t("currency")}</td>
+      <td>${Number(item.stock) || 0}</td>
+      <td>${escapeAttr(item.expiryDate || t("noExpiry"))}</td>
       <td><button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button></td>
     </tr>`;
   });
@@ -2568,6 +2572,8 @@ async function addExternalSupply(form) {
     supplierId,
     supplierName: supplierById(supplierId)?.name || "",
     price: Number(data.get("price")) || 0,
+    stock: Number(data.get("stock")) || 0,
+    expiryDate: String(data.get("expiryDate") || ""),
   };
   if (!row.itemName) return;
   const saved = await saveExternalSupply(row);

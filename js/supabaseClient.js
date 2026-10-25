@@ -802,6 +802,8 @@ export function mapExternalSupply(row) {
     supplierId: row.supplier_id || "",
     supplierName: row.supplier_name || "",
     price: Number(row.price) || 0,
+    stock: Number(row.stock) || 0,
+    expiryDate: row.expiry_date ? String(row.expiry_date).slice(0, 10) : "",
   };
 }
 
@@ -813,6 +815,8 @@ function externalSupplyPayload(row) {
     supplier_id: String(row.supplierId || ""),
     supplier_name: row.supplierName || "",
     price: Number(row.price) || 0,
+    stock: Number(row.stock) || 0,
+    expiry_date: row.expiryDate || null,
   };
 }
 
