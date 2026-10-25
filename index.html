@@ -179,6 +179,7 @@
             <button class="subnav-btn active" type="button" data-archive="withdrawals" data-i18n="archiveWithdrawals">ملفات السحوبات</button>
             <button class="subnav-btn" type="button" data-archive="prices" data-i18n="archivePrices">سجل الأسعار</button>
             <button class="subnav-btn" type="button" data-archive="charts" data-i18n="archiveCharts">الرسوم البيانية</button>
+            <button class="subnav-btn" type="button" data-archive="activity" data-i18n="activityLog">سجل العمليات</button>
           </div>
           <div class="subpage active" id="archive-withdrawals">
             <div class="toolbar" style="margin-bottom:12px">
@@ -212,6 +213,13 @@
                 <canvas id="chart-compare-canvas" height="120"></canvas>
               </div>
             </div>
+          </div>
+          <div class="subpage" id="archive-activity">
+            <div class="toolbar" style="margin-bottom:12px">
+              <select id="activity-account"></select>
+              <button class="btn btn-navy" type="button" data-print-archive="activity" data-i18n="print">طباعة</button>
+            </div>
+            <div class="card table-wrap" id="activity-log"></div>
           </div>
         </section>
       </div>

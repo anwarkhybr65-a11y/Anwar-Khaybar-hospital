@@ -832,6 +832,39 @@ export async function deleteExternalSupply(id) {
   return { error: null, missing: false };
 }
 
+export function mapActivity(row) {
+  return {
+    id: row.id,
+    username: row.username || "",
+    role: row.role || "",
+    staffKind: row.staff_kind || "",
+    clinicId: row.clinic_id || "",
+    action: row.action || "",
+    detail: row.detail || "",
+    at: row.happened_at || "",
+  };
+}
+
+function activityPayload(row) {
+  return {
+    username: row.username || "",
+    role: row.role || "",
+    staff_kind: row.staffKind || "",
+    clinic_id: row.clinicId || "",
+    action: row.action || "",
+    detail: row.detail || "",
+    happened_at: row.at || new Date().toISOString(),
+  };
+}
+
+export async function fetchActivityLog() {
+  return fetchOptional("activity_log", mapActivity, { column: "happened_at", ascending: false });
+}
+
+export async function saveActivity(row) {
+  return saveUuidRow("activity_log", row, activityPayload(row), mapActivity);
+}
+
 export async function loginUser(username, password) {
   const { data, error } = await supabase.rpc("login_app_user", {
     p_username: username,
@@ -883,7 +916,7 @@ export async function loadProcurementData() {
       error: connection.message,
     };
   }
-  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames, supplyRequests, clinicInventory, externalSupplies] =
+  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames, supplyRequests, clinicInventory, externalSupplies, activityLog] =
     await Promise.all([
       fetchSupplies(),
       fetchWithdrawals(),
@@ -899,6 +932,7 @@ export async function loadProcurementData() {
       fetchSupplyRequests(),
       fetchClinicInventory(),
       fetchExternalSupplies(),
+      fetchActivityLog(),
     ]);
   const error =
     supplies.error ||
@@ -928,6 +962,7 @@ export async function loadProcurementData() {
     supplyRequests,
     clinicInventory,
     externalSupplies,
+    activityLog,
     error,
   };
 }

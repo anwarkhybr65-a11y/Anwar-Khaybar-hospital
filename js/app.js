@@ -20,6 +20,7 @@ import {
   manageAppUser,
   deleteExternalSupply,
   saveClinicStock,
+  saveActivity,
   saveExternalSupply,
   saveSupplyRequest,
   updateSupply,
@@ -101,6 +102,34 @@ const I18N = {
     archiveWithdrawals: "ملفات السحوبات",
     archivePrices: "سجل الأسعار",
     archiveCharts: "الرسوم البيانية",
+    activityLog: "سجل العمليات",
+    activityTime: "الساعة",
+    activityAction: "العملية",
+    activityDetail: "التفاصيل",
+    allAccounts: "كل الحسابات",
+    actLogin: "تسجيل الدخول",
+    actLogout: "تسجيل الخروج",
+    actRequestSend: "إرسال طلب",
+    actRequestAccept: "قبول طلب",
+    actRequestReject: "رفض طلب",
+    actRequestEdit: "تعديل طلب",
+    actRequestSave: "حفظ طلب",
+    actWithdrawalAdd: "تسجيل مسحوب",
+    actWithdrawalDelete: "حذف مسحوب",
+    actSupplyAdd: "إضافة صنف",
+    actSupplyUpdate: "تعديل صنف",
+    actSupplyDelete: "حذف صنف",
+    actVendorAdd: "إضافة مورد",
+    actVendorDelete: "حذف مورد",
+    actStockSave: "تحديث كمية المستودع",
+    actDispose: "إتلاف",
+    actExternalAdd: "إضافة مستلزم خارجي",
+    actExternalDelete: "حذف مستلزم خارجي",
+    actClinicNames: "تغيير أسماء العيادات",
+    actUserCreate: "إنشاء حساب",
+    actUserBan: "حظر حساب",
+    actUserUnban: "إلغاء حظر حساب",
+    actUserReset: "تغيير كلمة مرور حساب",
     searchItems: "ابحث عن صنف...",
     chartByVendor: "تغيّر الأسعار لكل مورد",
     chartCompare: "مقارنة أسعار الموردين",
@@ -296,6 +325,34 @@ const I18N = {
     archiveWithdrawals: "Withdrawal files",
     archivePrices: "Price history",
     archiveCharts: "Charts",
+    activityLog: "Activity log",
+    activityTime: "Time",
+    activityAction: "Action",
+    activityDetail: "Details",
+    allAccounts: "All accounts",
+    actLogin: "Sign in",
+    actLogout: "Sign out",
+    actRequestSend: "Send request",
+    actRequestAccept: "Accept request",
+    actRequestReject: "Reject request",
+    actRequestEdit: "Edit request",
+    actRequestSave: "Save request",
+    actWithdrawalAdd: "Record withdrawal",
+    actWithdrawalDelete: "Delete withdrawal",
+    actSupplyAdd: "Add item",
+    actSupplyUpdate: "Edit item",
+    actSupplyDelete: "Delete item",
+    actVendorAdd: "Add supplier",
+    actVendorDelete: "Delete supplier",
+    actStockSave: "Update warehouse quantity",
+    actDispose: "Dispose",
+    actExternalAdd: "Add external supply",
+    actExternalDelete: "Delete external supply",
+    actClinicNames: "Change clinic names",
+    actUserCreate: "Create account",
+    actUserBan: "Ban account",
+    actUserUnban: "Unban account",
+    actUserReset: "Reset account password",
     searchItems: "Search items...",
     chartByVendor: "Price changes per supplier",
     chartCompare: "Supplier price comparison",
@@ -466,6 +523,7 @@ function seed() {
     requests: [],
     clinicStock: [],
     externalSupplies: [],
+    activityLog: [],
   };
 }
 
@@ -617,6 +675,7 @@ function load() {
   if (!Array.isArray(data.requests)) data.requests = [];
   if (!Array.isArray(data.clinicStock)) data.clinicStock = [];
   if (!Array.isArray(data.externalSupplies)) data.externalSupplies = [];
+  if (!Array.isArray(data.activityLog)) data.activityLog = [];
   recoverMissing(data);
   restoreSuppliers(data);
   save(data);
@@ -1167,6 +1226,7 @@ async function disposeItem(id) {
   }
   if (!Array.isArray(state.disposals)) state.disposals = [];
   state.disposals.unshift(saved.row);
+  await recordActivity("dispose", `${item.itemName} — ${qty}`);
   persist();
 }
 
@@ -1474,6 +1534,7 @@ function bindWithdrawForms() {
       }
       state.withdrawals.unshift(result.row);
       await archiveWithdrawal(result.row);
+      await recordActivity("withdrawal_add", `${clinicName(row.clinicId)} — ${row.productName} — ${row.quantity}`);
       form.reset();
       persist();
     });
@@ -1850,17 +1911,122 @@ function drawCompareChart() {
   });
 }
 
+function activityStamp(iso) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return { day: "", time: "" };
+  const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  const time = `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+  return { day, time };
+}
+
+function activityActionLabel(action) {
+  const key = {
+    login: "actLogin",
+    logout: "actLogout",
+    request_send: "actRequestSend",
+    request_accept: "actRequestAccept",
+    request_reject: "actRequestReject",
+    request_edit: "actRequestEdit",
+    request_save: "actRequestSave",
+    withdrawal_add: "actWithdrawalAdd",
+    withdrawal_delete: "actWithdrawalDelete",
+    supply_add: "actSupplyAdd",
+    supply_update: "actSupplyUpdate",
+    supply_delete: "actSupplyDelete",
+    vendor_add: "actVendorAdd",
+    vendor_delete: "actVendorDelete",
+    stock_save: "actStockSave",
+    dispose: "actDispose",
+    external_add: "actExternalAdd",
+    external_delete: "actExternalDelete",
+    clinic_names: "actClinicNames",
+    user_create: "actUserCreate",
+    user_ban: "actUserBan",
+    user_unban: "actUserUnban",
+    user_reset: "actUserReset",
+  }[action];
+  return key ? t(key) : action;
+}
+
+function activityRoleText(entry) {
+  if (entry.role === "deputy") return t("roleDeputy");
+  if (entry.role === "staff") {
+    const kind = entry.staffKind === "nurse" ? t("roleNurse") : t("roleDoctor");
+    return entry.clinicId ? `${kind} — ${clinicName(entry.clinicId)}` : kind;
+  }
+  return t("roleAdmin");
+}
+
+async function recordActivity(action, detail) {
+  const session = state.session;
+  if (!session?.username) return;
+  const entry = {
+    id: crypto.randomUUID(),
+    username: session.username,
+    role: session.role || "admin",
+    staffKind: session.staffKind || "",
+    clinicId: session.clinicId || "",
+    action,
+    detail: detail || "",
+    at: new Date().toISOString(),
+  };
+  if (!Array.isArray(state.activityLog)) state.activityLog = [];
+  state.activityLog.unshift(entry);
+  const saved = await saveActivity(entry);
+  if (saved?.row) Object.assign(entry, saved.row);
+}
+
+function renderActivityLog() {
+  const box = document.getElementById("activity-log");
+  const filter = document.getElementById("activity-account");
+  if (!box) return;
+  const entries = state.activityLog || [];
+  if (filter) {
+    const current = filter.value;
+    const names = [...new Set(entries.map((entry) => entry.username).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ar"));
+    filter.innerHTML = `<option value="">${t("allAccounts")}</option>${names.map((name) => `<option value="${escapeAttr(name)}">${escapeAttr(name)}</option>`).join("")}`;
+    if (current) filter.value = current;
+  }
+  const selected = filter?.value || "";
+  const list = entries
+    .filter((entry) => !selected || entry.username === selected)
+    .slice()
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  if (!list.length) {
+    box.innerHTML = `<p class="empty">${t("noData")}</p>`;
+    return;
+  }
+  const days = [...new Set(list.map((entry) => activityStamp(entry.at).day))];
+  box.innerHTML = days
+    .map((day) => {
+      const rows = list
+        .filter((entry) => activityStamp(entry.at).day === day)
+        .map((entry) => `<tr>
+          <td>${escapeAttr(activityStamp(entry.at).time)}</td>
+          <td>${escapeAttr(entry.username)}</td>
+          <td>${escapeAttr(activityRoleText(entry))}</td>
+          <td>${escapeAttr(activityActionLabel(entry.action))}</td>
+          <td>${escapeAttr(entry.detail)}</td>
+        </tr>`);
+      return `<h3>${escapeAttr(day)}</h3>${table([t("activityTime"), t("username"), t("accountRole"), t("activityAction"), t("activityDetail")], rows)}`;
+    })
+    .join("");
+}
+
 function renderArchive() {
   if (!canSeePrices()) {
     const files = document.getElementById("archive-files");
     const prices = document.getElementById("archive-prices-table");
+    const activity = document.getElementById("activity-log");
     if (files) files.innerHTML = "";
     if (prices) prices.innerHTML = "";
+    if (activity) activity.innerHTML = "";
     return;
   }
   renderArchiveWithdrawals();
   renderArchivePrices();
   renderArchiveCharts();
+  renderActivityLog();
 }
 
 let requestTab = "external";
@@ -2162,6 +2328,7 @@ async function submitRequest(form) {
     return;
   }
   state.requests.unshift(saved.row || row);
+  await recordActivity("request_send", `${requestKindLabel(row.kind)} — ${row.productName} — ${row.quantity}`);
   persist();
   alert(t("requestSent"));
 }
@@ -2237,6 +2404,7 @@ async function acceptRequest(id) {
   req.applied = true;
   req.reviewedBy = state.session?.username || "";
   req.reviewedAt = new Date().toISOString();
+  await recordActivity("request_accept", `${requestKindLabel(req.kind)} — ${req.productName} — ${req.quantity}`);
   await persistRequest(req);
 }
 
@@ -2247,6 +2415,7 @@ async function rejectRequest(id) {
   req.status = "rejected";
   req.reviewedBy = state.session?.username || "";
   req.reviewedAt = new Date().toISOString();
+  await recordActivity("request_reject", `${requestKindLabel(req.kind)} — ${req.productName} — ${req.quantity}`);
   await persistRequest(req);
 }
 
@@ -2408,6 +2577,7 @@ async function addExternalSupply(form) {
   }
   if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
   state.externalSupplies.unshift(saved.row || row);
+  await recordActivity("external_add", row.itemName);
   persist();
 }
 
@@ -2421,6 +2591,7 @@ async function removeExternalSupply(id) {
     return;
   }
   state.externalSupplies = state.externalSupplies.filter((row) => String(row.id) !== String(id));
+  await recordActivity("external_delete", item.itemName);
   persist();
 }
 
@@ -2470,11 +2641,13 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
     clinicId: result.user.clinicId || "",
     staffKind: result.user.staffKind || "",
   };
+  await recordActivity("login", "");
   save(state);
   startSession();
 });
 
-document.getElementById("logout-btn").addEventListener("click", () => {
+document.getElementById("logout-btn").addEventListener("click", async () => {
+  await recordActivity("logout", "");
   state.session = null;
   persist();
   document.getElementById("login-user").value = "";
@@ -2605,6 +2778,7 @@ document.getElementById("page-archive").addEventListener("click", async (e) => {
 });
 
 document.getElementById("price-search").addEventListener("input", renderArchivePrices);
+document.getElementById("activity-account").addEventListener("change", renderActivityLog);
 document.getElementById("chart-vendor").addEventListener("change", () => {
   drawVendorChart(document.getElementById("chart-vendor").value);
   drawCompareChart();
@@ -2631,6 +2805,7 @@ document.getElementById("page-warehouse").addEventListener("click", async (e) =>
   }
   applySavedSupply(item, result.row);
   if (item.stock == null) item.stock = value;
+  await recordActivity("stock_save", `${item.itemName} — ${item.stock}`);
   persist();
 });
 
@@ -2735,6 +2910,7 @@ document.getElementById("page-requests").addEventListener("click", async (e) => 
     const req = (state.requests || []).find((row) => row.id === saveBtn.dataset.saveRequest);
     if (!req || !isManager()) return;
     req.saved = true;
+    await recordActivity("request_save", `${requestKindLabel(req.kind)} — ${req.productName} — ${req.quantity}`);
     const ok = await persistRequest(req);
     if (ok) alert(t("requestSaved"));
   }
@@ -2782,6 +2958,7 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
     if (result.row.damaged === undefined) result.row.damaged = item.damaged === true;
     state.supplyItems.unshift(result.row);
     await logPrice(result.row);
+    await recordActivity("supply_add", item.itemName);
     form.reset();
     persist();
   });
@@ -2802,6 +2979,7 @@ document.getElementById("vendor-form").addEventListener("submit", async (e) => {
     return;
   }
   state.suppliers.unshift(result.row);
+  await recordActivity("vendor_add", vendor.name);
   e.target.reset();
   persist();
 });
@@ -2829,6 +3007,8 @@ document.getElementById("modal").addEventListener("click", async (e) => {
     alert(userAdminMessage(result.message || result.error));
     return;
   }
+  const userAction = action === "ban" ? "user_ban" : action === "unban" ? "user_unban" : action === "reset" ? "user_reset" : "";
+  if (userAction) await recordActivity(userAction, target);
   if (action === "reset" && result.password) showNewCredentials(result.username || target, result.password);
   else {
     const listed = await listAppUsers(state.session?.username || "", password);
@@ -2877,6 +3057,7 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       alert(userAdminMessage(result.message || result.error));
       return;
     }
+    await recordActivity("user_create", `${result.username} — ${role === "staff" ? (data.get("staffKind") === "nurse" ? t("roleNurse") : t("roleDoctor")) : role === "deputy" ? t("roleDeputy") : t("roleAdmin")}`);
     showNewCredentials(result.username, result.password);
     return;
   }
@@ -2889,6 +3070,7 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
     req.note = String(data.get("note") || "").trim();
     req.saved = true;
     closeModal();
+    await recordActivity("request_edit", `${requestKindLabel(req.kind)} — ${req.productName} — ${req.quantity}`);
     await persistRequest(req);
     return;
   }
@@ -2907,6 +3089,7 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       return;
     }
     state.clinicNames = names;
+    await recordActivity("clinic_names", "");
     persist();
     closeModal();
     return;
@@ -2934,6 +3117,7 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       }
       applySavedSupply(item, result.row || item);
       await logPrice(item);
+      await recordActivity("supply_update", item.itemName);
       persist();
     }
     closeModal();
@@ -2968,8 +3152,10 @@ document.addEventListener("click", async (e) => {
   if (delVendor) {
     if (!confirm(t("confirmDeleteVendor"))) return;
     const id = delVendor.dataset.delVendor;
+    const removedVendor = state.suppliers.find((s) => s.id === id);
     await deleteVendor(id);
     state.suppliers = state.suppliers.filter((s) => s.id !== id);
+    await recordActivity("vendor_delete", removedVendor?.name || "");
     persist();
     return;
   }
@@ -2982,8 +3168,10 @@ document.addEventListener("click", async (e) => {
       notifyDbError(result.error);
       return;
     }
+    const removedItem = state.supplyItems.find((i) => String(i.id) === String(id));
     state.supplyItems = state.supplyItems.filter((i) => String(i.id) !== String(id));
     if (!state.deletedSupplyIds.includes(id)) state.deletedSupplyIds.push(id);
+    await recordActivity("supply_delete", removedItem?.itemName || "");
     persist();
     return;
   }
@@ -3011,6 +3199,7 @@ document.addEventListener("click", async (e) => {
     }
     state.withdrawals = state.withdrawals.filter((w) => String(w.id) !== String(id));
     if (!state.deletedWithdrawalIds.includes(id)) state.deletedWithdrawalIds.push(id);
+    await recordActivity("withdrawal_delete", withdrawn ? `${clinicName(withdrawn.clinicId)} — ${withdrawn.productName} — ${withdrawn.quantity}` : "");
     persist();
   }
 });
@@ -3233,6 +3422,11 @@ async function hydrateFromDatabase() {
   if (externalCloud && !externalCloud.missing && !externalCloud.error) {
     state.externalSupplies = await mergeRemoteRows(state.externalSupplies, externalCloud.rows || [], saveExternalSupply);
   }
+  if (!Array.isArray(state.activityLog)) state.activityLog = [];
+  const activityCloud = result.activityLog;
+  if (activityCloud && !activityCloud.missing && !activityCloud.error) {
+    state.activityLog = await mergeRemoteRows(state.activityLog, activityCloud.rows || [], saveActivity);
+  }
 
   const cloudVendors = result.vendors || [];
   restoreSuppliers(state);
@@ -3277,6 +3471,11 @@ function printArchive(kind) {
     const clone = box ? box.cloneNode(true) : null;
     clone?.querySelectorAll(".archive-delete-col, [data-del-archive-year], [data-del-archive-month]").forEach((el) => el.remove());
     printHtml(clone ? clone.innerHTML : "", t("archiveWithdrawals"));
+    return;
+  }
+  if (kind === "activity") {
+    const box = document.getElementById("activity-log");
+    printHtml(box ? box.innerHTML : "", t("activityLog"));
     return;
   }
   if (kind === "prices") {
