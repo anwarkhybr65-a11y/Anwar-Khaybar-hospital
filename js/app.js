@@ -1,4 +1,5 @@
 import {
+  deleteArchiveWithdrawal,
   deleteSupply,
   deleteVendor,
   deleteWithdrawal,
@@ -110,6 +111,8 @@ const I18N = {
     confirmDeleteVendor: "هل تريد حذف هذا المورد؟",
     confirmDeleteItem: "هل تريد حذف هذا المنتج؟",
     confirmDeleteWithdrawal: "هل تريد حذف هذا المسحوب؟",
+    confirmDeleteArchive: "هل تريد حذف هذا السجل من أرشيف السحوبات؟",
+    confirmDeleteArchiveFile: "هل تريد حذف كل سجلات هذا الملف من الأرشيف؟",
     deleteVendor: "حذف",
     vendorNotes: "ملاحظات",
     selectVendor: "اختر المورد",
@@ -220,6 +223,8 @@ const I18N = {
     confirmDeleteVendor: "Delete this supplier?",
     confirmDeleteItem: "Delete this product?",
     confirmDeleteWithdrawal: "Delete this withdrawal?",
+    confirmDeleteArchive: "Delete this record from the withdrawal archive?",
+    confirmDeleteArchiveFile: "Delete every record in this archive file?",
     deleteVendor: "Delete",
     vendorNotes: "Notes",
     selectVendor: "Select supplier",
@@ -422,6 +427,7 @@ function load() {
   if (!Array.isArray(data.priceHistory)) data.priceHistory = [];
   if (!Array.isArray(data.deletedWithdrawalIds)) data.deletedWithdrawalIds = [];
   if (!Array.isArray(data.deletedSupplyIds)) data.deletedSupplyIds = [];
+  if (!Array.isArray(data.deletedArchiveWithdrawalIds)) data.deletedArchiveWithdrawalIds = [];
   recoverMissing(data);
   restoreSuppliers(data);
   save(data);
@@ -1199,7 +1205,10 @@ function renderArchiveWithdrawals() {
     box.innerHTML = `<h3>${t("archiveWithdrawals")}</h3><div class="archive-files">${years
       .map((y) => {
         const count = rows.filter((w) => (w.date || "").startsWith(y)).length;
-        return `<button class="archive-file" type="button" data-arch-year="${y}">📁 ${y}<small>${count}</small></button>`;
+        return `<div class="archive-file-card">
+          <button class="archive-file" type="button" data-arch-year="${y}">📁 ${y}<small>${count}</small></button>
+          <button class="btn btn-sm btn-danger" type="button" data-del-archive-year="${y}">${t("deleteVendor")}</button>
+        </div>`;
       })
       .join("")}</div>`;
     return;
@@ -1211,7 +1220,10 @@ function renderArchiveWithdrawals() {
       <div class="archive-files">${months
         .map((m) => {
           const count = rows.filter((w) => (w.date || "").startsWith(`${archiveYear}-${m}`)).length;
-          return `<button class="archive-file" type="button" data-arch-month="${m}">📄 ${monthLabel(Number(m))}<small>${count}</small></button>`;
+          return `<div class="archive-file-card">
+            <button class="archive-file" type="button" data-arch-month="${m}">📄 ${monthLabel(Number(m))}<small>${count}</small></button>
+            <button class="btn btn-sm btn-danger" type="button" data-del-archive-month="${m}">${t("deleteVendor")}</button>
+          </div>`;
         })
         .join("")}</div>`;
     return;
@@ -1221,7 +1233,7 @@ function renderArchiveWithdrawals() {
     <h3>${monthLabel(Number(archiveMonth))} ${archiveYear}</h3>
     <div id="archive-withdrawals-print">
     ${table(
-      [t("clinic"), t("itemName"), t("date"), t("quantity"), t("requester"), t("unitPrice"), t("lineTotal")],
+      [t("clinic"), t("itemName"), t("date"), t("quantity"), t("requester"), t("unitPrice"), t("lineTotal"), ""],
       list.map(
         (w) => `<tr>
           <td>${clinicName(w.clinicId)}</td>
@@ -1231,6 +1243,7 @@ function renderArchiveWithdrawals() {
           <td>${w.requester}</td>
           <td>${Number(w.unitPrice)} ${t("currency")}</td>
           <td>${Number(w.quantity) * Number(w.unitPrice)} ${t("currency")}</td>
+          <td class="archive-delete-col"><button class="btn btn-sm btn-danger" type="button" data-del-archive="${escapeAttr(w.id)}">${t("deleteVendor")}</button></td>
         </tr>`
       )
     )}
@@ -1429,7 +1442,57 @@ document.querySelectorAll("#page-archive [data-archive]").forEach((btn) => {
   });
 });
 
-document.getElementById("archive-files").addEventListener("click", (e) => {
+function archiveRowKeys(row) {
+  return [row?.id, row?.sourceId].filter((value) => value != null && value !== "").map(String);
+}
+
+function notDeletedArchive(row) {
+  return !archiveRowKeys(row).some((id) => state.deletedArchiveWithdrawalIds.includes(id));
+}
+
+async function removeArchiveRows(rows) {
+  for (const row of rows) {
+    const result = await deleteArchiveWithdrawal(row.id);
+    if (result.error) {
+      notifyDbError(result.error);
+      return false;
+    }
+    archiveRowKeys(row).forEach((id) => {
+      if (!state.deletedArchiveWithdrawalIds.includes(id)) state.deletedArchiveWithdrawalIds.push(id);
+    });
+  }
+  const gone = new Set(rows.flatMap(archiveRowKeys));
+  state.withdrawalArchive = (state.withdrawalArchive || []).filter((row) => !archiveRowKeys(row).some((id) => gone.has(id)));
+  if (archiveYear && !(state.withdrawalArchive || []).some((row) => (row.date || "").startsWith(archiveYear))) {
+    archiveYear = null;
+    archiveMonth = null;
+  } else if (archiveMonth && !(state.withdrawalArchive || []).some((row) => (row.date || "").startsWith(`${archiveYear}-${archiveMonth}`))) {
+    archiveMonth = null;
+  }
+  persist();
+  return true;
+}
+
+document.getElementById("archive-files").addEventListener("click", async (e) => {
+  const rowDelete = e.target.closest("[data-del-archive]");
+  const yearDelete = e.target.closest("[data-del-archive-year]");
+  const monthDelete = e.target.closest("[data-del-archive-month]");
+  if (rowDelete || yearDelete || monthDelete) {
+    const rows = state.withdrawalArchive || [];
+    let targets = [];
+    if (rowDelete) {
+      if (!confirm(t("confirmDeleteArchive"))) return;
+      targets = rows.filter((row) => String(row.id) === String(rowDelete.dataset.delArchive));
+    } else if (yearDelete) {
+      if (!confirm(t("confirmDeleteArchiveFile"))) return;
+      targets = rows.filter((row) => (row.date || "").startsWith(yearDelete.dataset.delArchiveYear));
+    } else {
+      if (!confirm(t("confirmDeleteArchiveFile"))) return;
+      targets = rows.filter((row) => (row.date || "").startsWith(`${archiveYear}-${monthDelete.dataset.delArchiveMonth}`));
+    }
+    if (targets.length) await removeArchiveRows(targets);
+    return;
+  }
   const yearBtn = e.target.closest("[data-arch-year]");
   const monthBtn = e.target.closest("[data-arch-month]");
   const back = e.target.closest("[data-arch-back]");
@@ -1790,15 +1853,19 @@ async function hydrateFromDatabase() {
 
   if (cloudReports.length) state.reports = cloudReports;
 
-  const cloudArchiveW = result.archiveWithdrawals || [];
+  if (!Array.isArray(state.deletedArchiveWithdrawalIds)) state.deletedArchiveWithdrawalIds = [];
+  for (const id of state.deletedArchiveWithdrawalIds) await deleteArchiveWithdrawal(id);
+  const cloudArchiveW = (result.archiveWithdrawals || []).filter(notDeletedArchive);
   if (cloudArchiveW.length) {
     const byId = new Map(cloudArchiveW.map((row) => [String(row.id), row]));
-    (state.withdrawalArchive || []).forEach((row) => {
+    (state.withdrawalArchive || []).filter(notDeletedArchive).forEach((row) => {
       if (!byId.has(String(row.id))) byId.set(String(row.id), row);
     });
     state.withdrawalArchive = [...byId.values()];
-  } else if ((state.withdrawalArchive || []).length) {
-    state.withdrawalArchive = await uploadLocalRows(state.withdrawalArchive, insertArchiveWithdrawal);
+  } else if ((state.withdrawalArchive || []).some(notDeletedArchive)) {
+    state.withdrawalArchive = await uploadLocalRows(state.withdrawalArchive.filter(notDeletedArchive), insertArchiveWithdrawal);
+  } else {
+    state.withdrawalArchive = [];
   }
 
   const cloudArchiveP = result.archivePrices || [];
@@ -1844,7 +1911,9 @@ function settingsDbHtml() {
 function printArchive(kind) {
   if (kind === "withdrawals") {
     const box = document.getElementById("archive-files");
-    printHtml(box ? box.innerHTML : "", t("archiveWithdrawals"));
+    const clone = box ? box.cloneNode(true) : null;
+    clone?.querySelectorAll(".archive-delete-col, [data-del-archive-year], [data-del-archive-month]").forEach((el) => el.remove());
+    printHtml(clone ? clone.innerHTML : "", t("archiveWithdrawals"));
     return;
   }
   if (kind === "prices") {

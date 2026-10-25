@@ -515,6 +515,18 @@ export async function fetchArchiveWithdrawals() {
   return { rows: (data || []).map(mapArchiveWithdrawalRow), error: null };
 }
 
+export async function deleteArchiveWithdrawal(id) {
+  const key = String(id || "");
+  if (!key) return { error: null };
+  if (isUuid(key)) {
+    const byId = await supabase.from("archive_withdrawals").delete().eq("id", key).select("id");
+    if (byId.error && !missingTable(byId.error) && !ignorableWriteError(byId.error.message)) return { error: byId.error.message };
+  }
+  const bySource = await supabase.from("archive_withdrawals").delete().eq("source_id", key).select("id");
+  if (bySource.error && !missingTable(bySource.error) && !ignorableWriteError(bySource.error.message)) return { error: bySource.error.message };
+  return { error: null };
+}
+
 export async function insertArchiveWithdrawal(row) {
   const payload = {
     clinic_id: row.clinicId || "",

@@ -318,6 +318,12 @@ textarea { min-height: 84px; resize: vertical; }
   flex-wrap: wrap;
   gap: 10px;
 }
+.archive-file-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
 .archive-file {
   border: 1px solid var(--line);
   background: #f8fbfb;
