@@ -19,6 +19,7 @@ import {
   loginUser,
   manageAppUser,
   deleteExternalSupply,
+  deleteClinicStock,
   saveClinicStock,
   saveActivity,
   saveExternalSupply,
@@ -96,7 +97,7 @@ const I18N = {
     noExpiry: "غير محدد",
     disposalValue: "قيمة الإتلاف",
     disposalTotal: "إجمالي قيمة الإتلاف",
-    expiryHint: "يظهر الصنف هنا إذا كان تالفاً، أو إذا تبقى على صلاحيته 90 يوماً أو أقل.",
+    expiryHint: "يظهر الصنف هنا إذا كان تالفاً، أو إذا تبقى على صلاحيته شهران أو أقل.",
     insufficientStock: "الكمية المتاحة في المستودع لا تكفي لهذا السحب.",
     stockRequired: "حدّد الكمية المتاحة في المستودع قبل تسجيل السحب.",
     archive: "أرشيف",
@@ -264,6 +265,11 @@ const I18N = {
     confirmAccept: "هل تريد قبول هذا الطلب؟",
     confirmReject: "هل تريد رفض هذا الطلب؟",
     noRequestProducts: "لا توجد أصناف مطابقة لهذا النوع من الطلب.",
+    disposeNote: "سبب عدم الإبلاغ عن قرب انتهاء المنتج",
+    disposeNoteRequired: "الملاحظة إجبارية: اكتب سبب عدم الإبلاغ عن قرب انتهاء المنتج.",
+    returnPendingAlert: "يوجد طلب إعادة إلى المستودع بانتظار القبول أو الرفض.",
+    disposePendingAlert: "يوجد طلب إتلاف بانتظار القبول.",
+    actClinicStockDelete: "حذف صنف من مخزون العيادة",
   },
   en: {
     hospitalName: "Anwar Khaybar Hospital",
@@ -324,7 +330,7 @@ const I18N = {
     noExpiry: "Not set",
     disposalValue: "Disposal value",
     disposalTotal: "Total disposal value",
-    expiryHint: "An item appears here when it is damaged, or when 90 days or fewer remain before it expires.",
+    expiryHint: "An item appears here when it is damaged, or when two months or fewer remain before it expires.",
     insufficientStock: "The warehouse does not have enough of this item for the withdrawal.",
     stockRequired: "Set the available warehouse quantity before recording a withdrawal.",
     archive: "Archive",
@@ -492,6 +498,11 @@ const I18N = {
     confirmAccept: "Accept this request?",
     confirmReject: "Reject this request?",
     noRequestProducts: "No matching items for this request type.",
+    disposeNote: "Reason the near-expiry was not reported",
+    disposeNoteRequired: "The note is required: write why the near-expiry was not reported.",
+    returnPendingAlert: "A return-to-warehouse request is waiting for acceptance or rejection.",
+    disposePendingAlert: "A disposal request is waiting for acceptance.",
+    actClinicStockDelete: "Delete a clinic inventory item",
   },
 };
 
@@ -693,8 +704,20 @@ function lowStockItems() {
   });
 }
 
-const EXPIRY_WINDOW_DAYS = 90;
 let dashPanel = null;
+
+function twoMonthLimit() {
+  const limit = new Date();
+  limit.setHours(0, 0, 0, 0);
+  limit.setMonth(limit.getMonth() + 2);
+  return limit;
+}
+
+function withinTwoMonths(date) {
+  const days = daysUntil(date);
+  if (days == null || days < 0) return false;
+  return new Date(`${date}T00:00:00`).getTime() <= twoMonthLimit().getTime();
+}
 
 function daysUntil(date) {
   if (!date) return null;
@@ -711,8 +734,9 @@ function expiryConcern(item) {
   if (stock == null || stock <= 0) return null;
   if (item.damaged) return "damaged";
   const days = daysUntil(item.expiryDate);
-  if (days == null || days > EXPIRY_WINDOW_DAYS) return null;
-  return days < 0 ? "expired" : "near";
+  if (days == null) return null;
+  if (days < 0) return "expired";
+  return withinTwoMonths(item.expiryDate) ? "near" : null;
 }
 
 function expiryItems() {
@@ -1396,6 +1420,21 @@ function bindWithdrawForms() {
       } else if (product && isDental(product)) {
         product.stock = result.stock == null ? trackedStock(product) - row.quantity : Number(result.stock);
       }
+      const addedToClinic = await changeClinicStock(
+        row.clinicId,
+        row.productId,
+        product?.expiryDate || "",
+        row.quantity,
+        { productName: row.productName, unit: product?.unit || "" }
+      );
+      if (!addedToClinic) {
+        await deleteWithdrawal(result.row.id, row.clinicId);
+        if (product && isDental(product)) {
+          const fresh = await fetchDentalStock(product.id);
+          if (fresh.found) product.stock = fresh.stock;
+        }
+        return;
+      }
       state.withdrawals.unshift(result.row);
       await archiveWithdrawal(result.row);
       await recordActivity("withdrawal_add", `${clinicName(row.clinicId)} — ${row.productName} — ${row.quantity}`);
@@ -1806,6 +1845,7 @@ function activityActionLabel(action) {
     external_delete: "actExternalDelete",
     clinic_names: "actClinicNames",
     clinic_stock_add: "actClinicStockAdd",
+    clinic_stock_delete: "actClinicStockDelete",
     user_create: "actUserCreate",
     user_ban: "actUserBan",
     user_unban: "actUserUnban",
@@ -1927,15 +1967,19 @@ function clinicAlertLines(row) {
   }
   const days = daysUntil(row.expiryDate);
   if (days != null && days < 0) lines.push(t("clinicExpiredAlert").replace("{name}", row.productName));
-  else if (days != null && days <= EXPIRY_WINDOW_DAYS) lines.push(t("clinicExpiryAlert").replace("{name}", row.productName).replace("{days}", days));
+  else if (withinTwoMonths(row.expiryDate)) lines.push(t("clinicExpiryAlert").replace("{name}", row.productName).replace("{days}", days));
   return lines;
 }
 
-function clinicTable(rows) {
+function clinicTable(rows, allowDelete) {
   const headers = [t("itemName"), t("unitSize"), t("quantity"), t("expiryDate"), t("daysLeft")];
   if (canSeePrices()) headers.push(t("price"));
+  if (allowDelete) headers.push("");
   const body = rows.map((row) => {
     const price = canSeePrices() ? `<td>${catalogPrice(row.productId)}</td>` : "";
+    const remove = allowDelete
+      ? `<td><button class="btn btn-sm btn-danger" type="button" data-del-clinic="${escapeAttr(row.id)}">${t("deleteVendor")}</button></td>`
+      : "";
     return `<tr>
       <td>${escapeAttr(row.productName)}</td>
       <td>${escapeAttr(row.unit)}</td>
@@ -1943,6 +1987,7 @@ function clinicTable(rows) {
       <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
       <td>${daysLabel(row.expiryDate)}</td>
       ${price}
+      ${remove}
     </tr>`;
   });
   return table(headers, body);
@@ -1992,7 +2037,7 @@ function renderClinicStock() {
     return `<div class="card table-wrap">
       <h3>${escapeAttr(clinicName(clinic.id))}</h3>
       ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
-      ${rows.length ? clinicTable(rows) : `<p class="empty">${t("noData")}</p>`}
+      ${rows.length ? clinicTable(rows, true) : `<p class="empty">${t("noData")}</p>`}
     </div>`;
   }).join("");
   renderStaffAlerts();
@@ -2028,13 +2073,33 @@ async function addClinicStockItem(form) {
   persist();
 }
 
+async function removeClinicStock(id) {
+  if (!isManager()) return;
+  const row = (state.clinicStock || []).find((item) => String(item.id) === String(id));
+  if (!row || !confirm(t("confirmDeleteItem"))) return;
+  const result = await deleteClinicStock(row.id);
+  if (result.error) {
+    notifyDbError(result.error);
+    return;
+  }
+  state.clinicStock = (state.clinicStock || []).filter((item) => String(item.id) !== String(id));
+  await recordActivity("clinic_stock_delete", `${clinicName(row.clinicId)} — ${row.productName}`);
+  persist();
+}
+
 function requestChoices(kind) {
-  if (kind === "dispose" || kind === "return") {
+  if (kind === "return") {
+    return clinicRows(sessionClinic()).map((row) => ({
+      value: row.id,
+      label: `${row.productName} — ${row.quantity}${row.expiryDate ? ` — ${row.expiryDate}` : ""}`,
+      max: Number(row.quantity) || 1,
+    }));
+  }
+  if (kind === "dispose") {
     return clinicRows(sessionClinic())
       .filter((row) => {
         const days = daysUntil(row.expiryDate);
-        if (days == null) return false;
-        return kind === "dispose" ? days < 0 : days >= 0 && days <= EXPIRY_WINDOW_DAYS;
+        return days != null && days < 0;
       })
       .map((row) => ({
         value: row.id,
@@ -2066,11 +2131,13 @@ function requestChoices(kind) {
 function requestActions(row) {
   if (!isManager()) return "";
   const id = escapeAttr(row.id);
-  const review = row.status === "pending"
-    ? `<button class="btn btn-sm btn-primary" type="button" data-accept-request="${id}">${t("accept")}</button>
+  const review = row.status !== "pending"
+    ? ""
+    : row.kind === "dispose"
+      ? `<button class="btn btn-sm btn-primary" type="button" data-accept-request="${id}">${t("accept")}</button>`
+      : `<button class="btn btn-sm btn-primary" type="button" data-accept-request="${id}">${t("accept")}</button>
        <button class="btn btn-sm btn-danger" type="button" data-reject-request="${id}">${t("reject")}</button>
-       <button class="btn btn-sm btn-navy" type="button" data-edit-request="${id}">${t("editRequest")}</button>`
-    : "";
+       <button class="btn btn-sm btn-navy" type="button" data-edit-request="${id}">${t("editRequest")}</button>`;
   return `<div class="request-actions">${review}
     <button class="btn btn-sm" type="button" data-print-request="${id}">${t("print")}</button>
     <button class="btn btn-sm btn-navy" type="button" data-save-request="${id}">${t("saveRequest")}</button>
@@ -2100,17 +2167,24 @@ function renderRequests() {
   const externalLink = requestTab === "external" && isManager()
     ? `<p><button class="btn btn-navy" type="button" data-open-page="external">${t("externalSupplies")}</button></p>`
     : "";
+  const noteLabel = requestTab === "dispose" ? t("disposeNote") : t("requestNote");
+  const noteRequired = requestTab === "dispose" ? "required" : "";
   const form = isStaff()
     ? `<div class="card"><h3>${t("sendRequest")}</h3>
         ${choices.length ? `<form class="form-grid" data-request-form>
           <div><label>${t("itemName")}</label><select name="itemId" required>${choices.map((choice) => `<option value="${escapeAttr(choice.value)}">${escapeAttr(choice.label)}</option>`).join("")}</select></div>
           <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
-          <div class="full"><label>${t("requestNote")}</label><input name="note" /></div>
+          <div class="full"><label>${noteLabel}</label><input name="note" ${noteRequired} /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("sendRequest")}</button></div>
         </form>` : `<p class="empty">${emptyText}</p>`}
       </div>`
     : "";
   const list = (state.requests || []).filter((row) => row.kind === requestTab && (!isStaff() || row.clinicId === sessionClinic()));
+  const pendingNotice = isManager() && list.some((row) => row.status === "pending") && requestTab === "return"
+    ? `<div class="clinic-alert">${t("returnPendingAlert")}</div>`
+    : isManager() && list.some((row) => row.status === "pending") && requestTab === "dispose"
+      ? `<div class="clinic-alert">${t("disposePendingAlert")}</div>`
+      : "";
   const headers = isManager()
     ? [t("clinic"), t("itemName"), t("quantity"), t("expiryDate"), t("requestNote"), t("requestStatus"), ""]
     : [t("itemName"), t("quantity"), t("expiryDate"), t("requestStatus")];
@@ -2134,7 +2208,7 @@ function renderRequests() {
       <td>${requestActions(row)}</td>
     </tr>`;
   });
-  panel.innerHTML = `${externalLink}${form}<div class="card table-wrap"><h3>${requestKindLabel(requestTab)}</h3>${table(headers, rows)}</div>`;
+  panel.innerHTML = `${externalLink}${pendingNotice}${form}<div class="card table-wrap"><h3>${requestKindLabel(requestTab)}</h3>${table(headers, rows)}</div>`;
 }
 
 async function persistRequest(req) {
@@ -2211,6 +2285,11 @@ async function submitRequest(form) {
     productName = product.itemName;
     expiryDate = product.expiryDate || "";
   }
+  const note = String(data.get("note") || "").trim();
+  if (requestTab === "dispose" && !note) {
+    alert(t("disposeNoteRequired"));
+    return;
+  }
   const row = {
     id: crypto.randomUUID(),
     kind: requestTab,
@@ -2219,7 +2298,7 @@ async function submitRequest(form) {
     productName,
     quantity: qty,
     expiryDate,
-    note: String(data.get("note") || "").trim(),
+    note,
     status: "pending",
     createdBy: state.session?.username || "",
     createdAt: new Date().toISOString(),
@@ -2247,26 +2326,7 @@ async function acceptRequest(id) {
   const externalItem = (state.externalSupplies || []).find((item) => String(item.id) === String(req.productId));
   const product = state.supplyItems.find((item) => String(item.id) === String(req.productId));
   const meta = { productName: req.productName, unit: (req.kind === "external" ? externalItem?.unit : product?.unit) || "" };
-  const expiry = req.expiryDate || product?.expiryDate || "";
-  if (req.kind === "internal") {
-    if (!product) {
-      alert(t("noData"));
-      return;
-    }
-    const moved = await adjustDentalStock(product, -qty);
-    if (!moved.ok) {
-      alert(moved.error || t("insufficientStock"));
-      return;
-    }
-    const added = await changeClinicStock(req.clinicId, req.productId, expiry, qty, meta);
-    if (!added) {
-      await adjustDentalStock(product, qty);
-      return;
-    }
-  } else if (req.kind === "external") {
-    const added = await changeClinicStock(req.clinicId, req.productId, externalItem?.expiryDate || expiry, qty, meta);
-    if (!added) return;
-  } else if (req.kind === "return") {
+  if (req.kind === "return") {
     if (product) {
       const moved = await adjustDentalStock(product, qty);
       if (!moved.ok) {
@@ -2925,6 +2985,12 @@ document.getElementById("page-clinic-stock").addEventListener("submit", async (e
   await addClinicStockItem(e.target);
 });
 
+document.getElementById("page-clinic-stock").addEventListener("click", async (e) => {
+  const button = e.target.closest("[data-del-clinic]");
+  if (!button) return;
+  await removeClinicStock(button.dataset.delClinic);
+});
+
 document.getElementById("clinic-report-list").addEventListener("click", (e) => {
   const btn = e.target.closest("[data-report-clinic]");
   if (!btn) return;
@@ -3198,6 +3264,15 @@ document.addEventListener("click", async (e) => {
         alert(stockResult.error);
         return;
       }
+    }
+    if (withdrawn) {
+      await changeClinicStock(
+        withdrawn.clinicId,
+        withdrawn.productId,
+        product?.expiryDate || "",
+        -(Number(withdrawn.quantity) || 0),
+        { productName: withdrawn.productName, unit: product?.unit || "" }
+      );
     }
     state.withdrawals = state.withdrawals.filter((w) => String(w.id) !== String(id));
     if (!state.deletedWithdrawalIds.includes(id)) state.deletedWithdrawalIds.push(id);

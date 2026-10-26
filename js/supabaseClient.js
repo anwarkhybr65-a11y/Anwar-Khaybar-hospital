@@ -794,6 +794,14 @@ export async function saveClinicStock(row) {
   return saveUuidRow("clinic_inventory", row, clinicStockPayload(row), mapClinicStock);
 }
 
+export async function deleteClinicStock(id) {
+  if (!isUuid(id)) return { error: null, missing: false };
+  const { error } = await supabase.from("clinic_inventory").delete().eq("id", id);
+  if (error && missingTable(error)) return { error: null, missing: true };
+  if (error) return { error: error.message, missing: false };
+  return { error: null, missing: false };
+}
+
 export function mapExternalSupply(row) {
   return {
     id: row.id,
