@@ -29,7 +29,6 @@ import {
 } from "./supabaseClient.js";
 
 const KEY = "anwar-khaybar-procurement";
-const BACKUP_KEY = "anwar-khaybar-procurement-backup";
 
 const CLINICS = [
   { id: "ahmed", ar: "عيادة دكتور أحمد", en: "Dr. Ahmed clinic", letter: "أ", color: "#0d6e6e" },
@@ -71,6 +70,7 @@ const I18N = {
     stockQty: "الكمية في المستودع (علب)",
     boxes: "علب",
     saveStock: "حفظ الكمية",
+    externalQtyPending: "لم تُحفظ الكمية وتاريخ الصلاحية. شغّل ملف sql/add_external_supply_qty.sql مرة واحدة في قاعدة البيانات ثم أعد الحفظ.",
     lowStockTitle: "تنبيه: منتجات على وشك النفاد",
     lowStockItem: "الكمية المتبقية من {name} هي {qty} علب، والمنتج على وشك النفاد.",
     lowStockCard: "قاربت على النفاد",
@@ -298,6 +298,7 @@ const I18N = {
     stockQty: "Warehouse quantity (boxes)",
     boxes: "boxes",
     saveStock: "Save quantity",
+    externalQtyPending: "Quantity and expiry were not saved. Run sql/add_external_supply_qty.sql once in the database, then save again.",
     lowStockTitle: "Alert: items are running low",
     lowStockItem: "{name} has {qty} boxes left and is about to run out.",
     lowStockCard: "Running low",
@@ -526,6 +527,11 @@ function seed() {
     reports: [],
     withdrawalArchive: [],
     priceHistory: [],
+    deletedWithdrawalIds: [],
+    deletedSupplyIds: [],
+    deletedArchiveWithdrawalIds: [],
+    deletedArchivePriceIds: [],
+    deletedArchivePriceKeys: [],
     disposals: [],
     clinicNames: {},
     requests: [],
@@ -535,164 +541,26 @@ function seed() {
   };
 }
 
-function defaultCatalog() {
-  const t = todayISO();
-  return [
-   
-  ];
-}
-
-function defaultWithdrawals() {
-  const t = todayISO();
-  return [
-    
-  ];
-}
-
-function itemsFromPriceHistory(history) {
-  const byId = new Map();
-  (history || [])
-    .slice()
-    .sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")))
-    .forEach((p) => {
-      const id = p.itemId || p.id || uid("si");
-      byId.set(id, {
-        id,
-        category: "medical",
-        itemName: p.itemName || "",
-        unit: p.unit || "",
-        type: p.type || "",
-        supplierId: p.supplierId || "",
-        price: Number(p.price) || 0,
-        updatedAt: p.date || todayISO(),
-      });
-    });
-  return [...byId.values()].filter((item) => item.itemName);
-}
-
-function readBackup() {
-  try {
-    const raw = localStorage.getItem(BACKUP_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeBackup(data) {
-  if (!data) return;
-  const prev = readBackup() || {};
-  const snapshot = {
-    supplyItems: data.supplyItems?.length ? data.supplyItems : prev.supplyItems || [],
-    withdrawals: data.withdrawals?.length ? data.withdrawals : prev.withdrawals || [],
-    withdrawalArchive: data.withdrawalArchive?.length ? data.withdrawalArchive : prev.withdrawalArchive || [],
-    priceHistory: data.priceHistory?.length ? data.priceHistory : prev.priceHistory || [],
-    suppliers: data.suppliers?.length ? data.suppliers : prev.suppliers || [],
-  };
-  localStorage.setItem(BACKUP_KEY, JSON.stringify(snapshot));
-}
-
-function vendorsFromItems(items, current) {
-  const list = (current || []).slice();
-  const ids = new Set(list.map((s) => String(s.id)));
-  const names = new Set(list.map((s) => (s.name || "").trim().toLowerCase()).filter(Boolean));
-  (items || []).forEach((item) => {
-    const name = (item.supplierName || "").trim();
-    if (!name) return;
-    const key = name.toLowerCase();
-    if (names.has(key)) return;
-    names.add(key);
-    const id = item.supplierId && !ids.has(String(item.supplierId)) ? item.supplierId : uid("s");
-    ids.add(String(id));
-    list.push({ id, name, contact: "", phone: "", email: "", notes: "" });
-  });
-  return list;
-}
-
-function restoreSuppliers(data) {
-  if (!Array.isArray(data.suppliers)) data.suppliers = [];
-  if (!data.suppliers.length) {
-    const backup = readBackup() || {};
-    if (Array.isArray(backup.suppliers) && backup.suppliers.length) data.suppliers = backup.suppliers;
-  }
-  data.suppliers = vendorsFromItems(data.supplyItems, data.suppliers);
-  return data;
-}
-
-function recoverMissing(data) {
-  if (data.initialized) return data;
-  const backup = readBackup() || {};
-  if (!data.suppliers.length && Array.isArray(backup.suppliers) && backup.suppliers.length) {
-    data.suppliers = backup.suppliers;
-  }
-  if (!data.priceHistory.length && Array.isArray(backup.priceHistory) && backup.priceHistory.length) {
-    data.priceHistory = backup.priceHistory;
-  }
-  if (!data.supplyItems.length) {
-    if (Array.isArray(backup.supplyItems) && backup.supplyItems.length) data.supplyItems = backup.supplyItems;
-    else {
-      const fromHistory = itemsFromPriceHistory(data.priceHistory);
-      data.supplyItems = fromHistory.length ? fromHistory : defaultCatalog();
-    }
-  }
-  if (!data.withdrawals.length) {
-    if (Array.isArray(backup.withdrawals) && backup.withdrawals.length) data.withdrawals = backup.withdrawals;
-    else if (Array.isArray(data.withdrawalArchive) && data.withdrawalArchive.length) data.withdrawals = data.withdrawalArchive.slice();
-    else if (Array.isArray(backup.withdrawalArchive) && backup.withdrawalArchive.length) data.withdrawals = backup.withdrawalArchive.slice();
-    else data.withdrawals = defaultWithdrawals();
-  }
-  if (!data.withdrawalArchive.length) data.withdrawalArchive = data.withdrawals.slice();
-  if (!data.priceHistory.length && data.supplyItems.length) {
-    data.priceHistory = data.supplyItems.map((item) => ({
-      id: uid("ph"),
-      itemId: item.id,
-      itemName: item.itemName,
-      type: item.type,
-      unit: item.unit,
-      supplierId: item.supplierId,
-      price: itemPrice(item),
-      date: item.updatedAt || todayISO(),
-    }));
-  }
-  data.initialized = true;
-  return data;
-}
-
 function load() {
-  const raw = localStorage.getItem(KEY);
-  const data = raw ? JSON.parse(raw) : seed();
-  if (!data.lang || !I18N[data.lang]) data.lang = "ar";
-  if (!Array.isArray(data.suppliers)) data.suppliers = [];
-  const demoVendors = ["شركة النور الطبية", "مؤسسة الحياة للمستلزمات", "إمداد الطوارئ"];
-  data.suppliers = data.suppliers.filter((s) => !demoVendors.includes(s.name) && !["s1", "s2", "s3"].includes(s.id));
-  if (!Array.isArray(data.supplyItems)) data.supplyItems = [];
-  if (!Array.isArray(data.withdrawals)) data.withdrawals = [];
-  if (!Array.isArray(data.reports)) data.reports = [];
-  data.supplyItems.forEach((item) => {
-    if (item.price == null && item.bestPrice != null) item.price = item.bestPrice;
-  });
-  if (!Array.isArray(data.withdrawalArchive)) data.withdrawalArchive = [];
-  if (!Array.isArray(data.priceHistory)) data.priceHistory = [];
-  if (!Array.isArray(data.deletedWithdrawalIds)) data.deletedWithdrawalIds = [];
-  if (!Array.isArray(data.deletedSupplyIds)) data.deletedSupplyIds = [];
-  if (!Array.isArray(data.deletedArchiveWithdrawalIds)) data.deletedArchiveWithdrawalIds = [];
-  if (!Array.isArray(data.deletedArchivePriceIds)) data.deletedArchivePriceIds = [];
-  if (!Array.isArray(data.deletedArchivePriceKeys)) data.deletedArchivePriceKeys = [];
-  if (!Array.isArray(data.disposals)) data.disposals = [];
-  if (!data.clinicNames || typeof data.clinicNames !== "object") data.clinicNames = {};
-  if (!Array.isArray(data.requests)) data.requests = [];
-  if (!Array.isArray(data.clinicStock)) data.clinicStock = [];
-  if (!Array.isArray(data.externalSupplies)) data.externalSupplies = [];
-  if (!Array.isArray(data.activityLog)) data.activityLog = [];
-  recoverMissing(data);
-  restoreSuppliers(data);
+  localStorage.removeItem("anwar-khaybar-procurement-backup");
+  let stored = {};
+  try {
+    stored = JSON.parse(localStorage.getItem(KEY) || "{}") || {};
+  } catch {
+    stored = {};
+  }
+  const data = seed();
+  data.session = stored.session && typeof stored.session === "object" ? stored.session : null;
+  data.lang = stored.lang && I18N[stored.lang] ? stored.lang : "ar";
   save(data);
   return data;
 }
 
 function save(data) {
-  localStorage.setItem(KEY, JSON.stringify(data));
-  writeBackup(data);
+  localStorage.setItem(KEY, JSON.stringify({
+    session: data?.session || null,
+    lang: data?.lang && I18N[data.lang] ? data.lang : "ar",
+  }));
 }
 
 let state = load();
@@ -961,24 +829,6 @@ async function logPrice(item) {
     return;
   }
   state.priceHistory.unshift(saved.row);
-}
-
-async function syncAllProductsToPriceArchive() {
-  if (!Array.isArray(state.priceHistory)) state.priceHistory = [];
-  const keys = new Set((state.priceHistory || []).map(priceArchiveKey));
-  for (const item of state.supplyItems || []) {
-    const entry = priceEntryFromItem(item);
-    if (keys.has(priceArchiveKey(entry))) continue;
-    if ((state.deletedArchivePriceKeys || []).includes(priceArchiveKey(entry))) continue;
-    const saved = await insertArchivePrice(entry);
-    if (saved.error || !saved.row) {
-      notifyDbError(saved.error);
-      continue;
-    }
-    state.priceHistory.unshift(saved.row);
-    keys.add(priceArchiveKey(entry));
-    keys.add(priceArchiveKey(saved.row));
-  }
 }
 
 function chartHistory() {
@@ -1274,7 +1124,10 @@ function renderWarehouse() {
       <td>
         <input data-stock-input="${item.id}" type="number" min="0" step="1" value="${stock == null ? "" : stock}" style="max-width:110px" />
       </td>
-      <td><button class="btn btn-sm btn-primary" type="button" data-save-stock="${item.id}">${t("saveStock")}</button></td>
+      <td>
+        <button class="btn btn-sm btn-primary" type="button" data-save-stock="${escapeAttr(item.id)}">${t("saveStock")}</button>
+        <button class="btn btn-sm btn-danger" type="button" data-del-item="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
+      </td>
     </tr>`;
   });
   box.innerHTML = `<h3>${t("warehouse")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("expiryDate"), t("damaged"), t("saveStock"), ""], rows)}`;
@@ -2606,6 +2459,7 @@ function renderExternalSupplies() {
       <td><input data-external-stock type="number" min="0" step="1" value="${Number(item.stock) || 0}" style="max-width:110px" /></td>
       <td><input data-external-expiry type="date" value="${escapeAttr(item.expiryDate || "")}" /></td>
       <td>
+        <button class="btn btn-sm btn-navy" type="button" data-edit-external="${escapeAttr(item.id)}">${t("edit")}</button>
         <button class="btn btn-sm btn-primary" type="button" data-save-external="${escapeAttr(item.id)}">${t("saveStock")}</button>
         <button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
       </td>
@@ -2655,8 +2509,61 @@ async function saveExternalSupplyDetails(id) {
     notifyDbError(saved.error);
     return;
   }
+  if (saved.stockSkipped) {
+    alert(t("externalQtyPending"));
+    return;
+  }
   if (saved.row) Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate });
   await recordActivity("external_update", `${item.itemName} — ${item.stock}${item.expiryDate ? ` — ${item.expiryDate}` : ""}`);
+  persist();
+}
+
+function openEditExternal(id) {
+  if (!isManager()) return;
+  const item = (state.externalSupplies || []).find((row) => String(row.id) === String(id));
+  if (!item) return;
+  const supplierOptions = `<option value="">${t("selectVendor")}</option>` + state.suppliers
+    .map((supplier) => `<option value="${escapeAttr(supplier.id)}" ${String(supplier.id) === String(item.supplierId) ? "selected" : ""}>${escapeAttr(supplier.name)}</option>`)
+    .join("");
+  openModal(`
+    <h2>${t("edit")}</h2>
+    <form class="form-grid" id="edit-external-form" onsubmit="event.preventDefault()">
+      <input type="hidden" name="id" value="${escapeAttr(item.id)}" />
+      <div><label>${t("itemName")}</label><input name="itemName" value="${escapeAttr(item.itemName)}" required /></div>
+      <div><label>${t("unitSize")}</label><input name="unit" value="${escapeAttr(item.unit)}" required /></div>
+      <div><label>${t("itemType")}</label><input name="type" value="${escapeAttr(item.type)}" required /></div>
+      <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
+      <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" value="${Number(item.price) || 0}" required /></div>
+      <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
+    </form>
+  `);
+  document.getElementById("edit-external-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveEditedExternal(e.target);
+  });
+}
+
+async function saveEditedExternal(form) {
+  if (!isManager()) return;
+  const data = new FormData(form);
+  const item = (state.externalSupplies || []).find((row) => String(row.id) === String(data.get("id")));
+  if (!item) return;
+  const supplierId = String(data.get("supplierId") || "");
+  item.itemName = String(data.get("itemName") || "").trim();
+  item.unit = String(data.get("unit") || "").trim();
+  item.type = String(data.get("type") || "").trim();
+  item.supplierId = supplierId;
+  item.supplierName = supplierById(supplierId)?.name || "";
+  item.price = Number(data.get("price")) || 0;
+  if (!item.itemName) return;
+  const saved = await saveExternalSupply(item);
+  if (saved.error) {
+    notifyDbError(saved.error);
+    return;
+  }
+  if (saved.row) Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate });
+  await recordActivity("external_update", item.itemName);
+  closeModal();
   persist();
 }
 
@@ -2763,7 +2670,7 @@ function archiveRowKeys(row) {
 }
 
 function notDeletedArchive(row) {
-  return !archiveRowKeys(row).some((id) => state.deletedArchiveWithdrawalIds.includes(id));
+  return !archiveRowKeys(row).some((id) => (state.deletedArchiveWithdrawalIds || []).includes(id));
 }
 
 async function removeArchiveRows(rows) {
@@ -2947,6 +2854,11 @@ document.getElementById("page-external").addEventListener("submit", async (e) =>
 });
 
 document.getElementById("page-external").addEventListener("click", async (e) => {
+  const editBtn = e.target.closest("[data-edit-external]");
+  if (editBtn) {
+    openEditExternal(editBtn.dataset.editExternal);
+    return;
+  }
   const saveBtn = e.target.closest("[data-save-external]");
   if (saveBtn) {
     await saveExternalSupplyDetails(saveBtn.dataset.saveExternal);
@@ -3303,236 +3215,60 @@ function rowsToHtmlTable(rows) {
   );
 }
 
-async function pushList(rows, insertFn) {
-  const uploaded = [];
-  for (const row of rows) {
-    const result = await insertFn(row);
-    if (result.error || !result.row) {
-      return { rows: uploaded.concat(rows.slice(uploaded.length)), error: result.error || t("dbSaveError") };
-    }
-    uploaded.push(result.row);
-  }
-  return { rows: uploaded, error: null };
-}
-
-async function mergeRemoteRows(localRows, cloudRows, saveFn) {
-  const byId = new Map((cloudRows || []).map((row) => [String(row.id), row]));
-  for (const row of localRows || []) {
-    if (!row?.id || byId.has(String(row.id))) continue;
-    const saved = await saveFn(row);
-    if (saved?.error) continue;
-    const next = saved?.row || row;
-    if (next?.id) byId.set(String(next.id), next);
-  }
-  return [...byId.values()];
-}
-
-async function uploadLocalRows(rows, insertFn) {
-  const pushed = await pushList(rows, insertFn);
-  if (pushed.error) notifyDbError(pushed.error);
-  return pushed.rows;
+function cloudList(result) {
+  if (!result || result.missing || result.error) return [];
+  return result.rows || [];
 }
 
 function notDeletedSupply(row) {
   const ids = [row.id, row.sourceId].filter((value) => value != null && value !== "").map(String);
-  return !ids.some((id) => state.deletedSupplyIds.includes(id));
+  return !ids.some((id) => (state.deletedSupplyIds || []).includes(id));
 }
 
 function notDeletedWithdrawal(row) {
   const ids = [row.id, row.sourceId].filter((value) => value != null && value !== "").map(String);
-  return !ids.some((id) => state.deletedWithdrawalIds.includes(id));
+  return !ids.some((id) => (state.deletedWithdrawalIds || []).includes(id));
 }
 
 async function overlayCategory(tableResult, wantEmergency) {
-  if (!tableResult || tableResult.missing) return;
-  const current = state.supplyItems.filter((item) => isEmergency(item) === wantEmergency && notDeletedSupply(item));
   const other = state.supplyItems.filter((item) => isEmergency(item) !== wantEmergency);
-  const cloud = (tableResult.rows || []).filter(notDeletedSupply);
-  const expiryReady = wantEmergency ? true : await ensureDentalExpiryColumns();
-  const withMeta = (row) => {
-    if (expiryReady || wantEmergency) {
-      return { ...row, expiryDate: row.expiryDate || "", damaged: row.damaged === true };
-    }
-    const local = current.find((item) => sameRecord(row, item) || sameRecord(item, row));
-    return {
-      ...row,
-      expiryDate: local?.expiryDate || "",
-      damaged: local?.damaged === true,
-    };
-  };
-  if (!cloud.length) {
-    const uploaded = await uploadLocalRows(current, (item) =>
-      insertSupply({ ...item, category: wantEmergency ? "emergency" : "dental" }, state.suppliers)
-    );
-    state.supplyItems = [...other, ...uploaded.map(withMeta)];
-    return;
-  }
-  const extras = current.filter((item) => !cloud.some((row) => sameRecord(row, item)));
-  const uploaded = extras.length
-    ? await uploadLocalRows(extras, (item) =>
-        insertSupply({ ...item, category: wantEmergency ? "emergency" : "dental" }, state.suppliers)
-      )
-    : [];
-  state.supplyItems = [...other, ...cloud.map(withMeta), ...uploaded.map(withMeta)];
+  const cloud = cloudList(tableResult).filter(notDeletedSupply).map((row) => ({
+    ...row,
+    expiryDate: row.expiryDate || "",
+    damaged: row.damaged === true,
+  }));
+  state.supplyItems = [...other, ...cloud];
 }
 
-async function overlayInventoryTables(result, legacyWithdrawals) {
+async function overlayInventoryTables(result) {
+  await ensureDentalExpiryColumns();
   await overlayCategory(result.dentalWarehouse, false);
   await overlayCategory(result.emergencySupplies, true);
-  const log = result.withdrawalLog;
-  if (!log || log.missing) return;
-  const cloud = (log.rows || []).filter(notDeletedWithdrawal);
-  const local = state.withdrawals.filter(notDeletedWithdrawal);
-  const legacy = (legacyWithdrawals || []).filter(notDeletedWithdrawal);
-  const known = cloud.length ? cloud : [];
-  const extras = [...legacy, ...local].filter((row) => !known.some((item) => sameRecord(item, row) || sameRecord(row, item)));
-  const uniqueExtras = [];
-  extras.forEach((row) => {
-    if (uniqueExtras.some((item) => sameRecord(item, row) || sameRecord(row, item))) return;
-    uniqueExtras.push(row);
-  });
-  const uploaded = uniqueExtras.length
-    ? await uploadLocalRows(uniqueExtras, (row) =>
-        insertWithdrawalLog({ ...row, affectsStock: false, sourceId: row.sourceId || row.id })
-      )
-    : [];
-  state.withdrawals = [...known, ...uploaded];
 }
 
 async function hydrateFromDatabase() {
   const result = await loadProcurementData();
   if (!result.connection.ok) throw new Error(result.error || result.connection.message);
 
-  const cloudSupplies = (result.supplies || []).filter((row) => !state.deletedSupplyIds.includes(String(row.id)));
-  const cloudWithdrawals = (result.withdrawals || []).filter((row) => !state.deletedWithdrawalIds.includes(String(row.id)));
-  const cloudReports = result.reports || [];
+  state.supplyItems = [];
+  await overlayInventoryTables(result);
 
-  for (const id of state.deletedSupplyIds) await deleteSupply(id);
-  for (const id of state.deletedWithdrawalIds) await deleteWithdrawal(id);
-
-  if (cloudSupplies.length) {
-    const byId = new Map(cloudSupplies.map((row) => [String(row.id), row]));
-    state.supplyItems.forEach((row) => {
-      if (!byId.has(String(row.id))) byId.set(String(row.id), row);
-    });
-    state.supplyItems = [...byId.values()];
-  } else if (state.supplyItems.length) {
-    state.supplyItems = await uploadLocalRows(
-      state.supplyItems.filter((row) => !state.deletedSupplyIds.includes(String(row.id))),
-      (item) => insertSupply(item, state.suppliers)
-    );
-  }
-
-  await overlayInventoryTables(result, cloudWithdrawals);
-
-  if (result.withdrawalLog?.missing) {
-    if (cloudWithdrawals.length) {
-      const byId = new Map(cloudWithdrawals.map((row) => [String(row.id), row]));
-      state.withdrawals.forEach((row) => {
-        if (!byId.has(String(row.id))) byId.set(String(row.id), row);
-      });
-      state.withdrawals = [...byId.values()];
-    } else if (state.withdrawals.length) {
-      state.withdrawals = await uploadLocalRows(
-        state.withdrawals.filter((row) => !state.deletedWithdrawalIds.includes(String(row.id))),
-        insertWithdrawal
-      );
-    }
-  }
-
-  if (cloudReports.length) state.reports = cloudReports;
-
-  if (!Array.isArray(state.deletedArchiveWithdrawalIds)) state.deletedArchiveWithdrawalIds = [];
-  for (const id of state.deletedArchiveWithdrawalIds) await deleteArchiveWithdrawal(id);
-  const cloudArchiveW = (result.archiveWithdrawals || []).filter(notDeletedArchive);
-  if (cloudArchiveW.length) {
-    const byId = new Map(cloudArchiveW.map((row) => [String(row.id), row]));
-    (state.withdrawalArchive || []).filter(notDeletedArchive).forEach((row) => {
-      if (!byId.has(String(row.id))) byId.set(String(row.id), row);
-    });
-    state.withdrawalArchive = [...byId.values()];
-  } else if ((state.withdrawalArchive || []).some(notDeletedArchive)) {
-    state.withdrawalArchive = await uploadLocalRows(state.withdrawalArchive.filter(notDeletedArchive), insertArchiveWithdrawal);
-  } else {
-    state.withdrawalArchive = [];
-  }
-
-  if (!Array.isArray(state.deletedArchivePriceIds)) state.deletedArchivePriceIds = [];
-  for (const id of state.deletedArchivePriceIds) await deleteArchivePrice(id);
-  const keptPrice = (row) => !state.deletedArchivePriceIds.includes(String(row.id));
-  const cloudArchiveP = (result.archivePrices || []).filter(keptPrice);
-  if (cloudArchiveP.length) {
-    const byId = new Map(cloudArchiveP.map((row) => [String(row.id), row]));
-    (state.priceHistory || []).filter(keptPrice).forEach((row) => {
-      if (!byId.has(String(row.id))) byId.set(String(row.id), row);
-    });
-    state.priceHistory = [...byId.values()];
-  } else if ((state.priceHistory || []).some(keptPrice)) {
-    state.priceHistory = await uploadLocalRows(state.priceHistory.filter(keptPrice), insertArchivePrice);
-  } else {
-    state.priceHistory = [];
-  }
-  await syncAllProductsToPriceArchive();
-
-  const disposalCloud = result.disposalLog;
-  if (!Array.isArray(state.disposals)) state.disposals = [];
-  if (disposalCloud && !disposalCloud.missing && !disposalCloud.error) {
-    const cloudDisposals = disposalCloud.rows || [];
-    if (cloudDisposals.length) {
-      const byId = new Map(cloudDisposals.map((row) => [String(row.id), row]));
-      state.disposals.forEach((row) => {
-        if (row.id && !byId.has(String(row.id))) byId.set(String(row.id), row);
-      });
-      state.disposals = [...byId.values()];
-    } else if (state.disposals.length) {
-      state.disposals = await uploadLocalRows(state.disposals, insertDisposal);
-    }
-  }
-
+  const withdrawalLog = result.withdrawalLog;
+  state.withdrawals = withdrawalLog && !withdrawalLog.missing && !withdrawalLog.error
+    ? (withdrawalLog.rows || []).filter(notDeletedWithdrawal)
+    : (result.withdrawals || []).filter(notDeletedWithdrawal);
+  state.reports = result.reports || [];
+  state.withdrawalArchive = (result.archiveWithdrawals || []).filter(notDeletedArchive);
+  state.priceHistory = (result.archivePrices || []).filter((row) => !(state.deletedArchivePriceIds || []).includes(String(row.id)));
+  state.disposals = cloudList(result.disposalLog);
   const clinicCloud = result.clinicNames;
-  if (!state.clinicNames || typeof state.clinicNames !== "object") state.clinicNames = {};
-  if (clinicCloud && !clinicCloud.missing && !clinicCloud.error) {
-    const cloudNames = clinicCloud.names || {};
-    if (Object.keys(cloudNames).length) state.clinicNames = { ...state.clinicNames, ...cloudNames };
-    else if (Object.keys(state.clinicNames).length) await upsertClinicNames(state.clinicNames);
-  }
+  state.clinicNames = clinicCloud && !clinicCloud.missing && !clinicCloud.error ? { ...(clinicCloud.names || {}) } : {};
+  state.requests = cloudList(result.supplyRequests);
+  state.clinicStock = cloudList(result.clinicInventory);
+  state.externalSupplies = cloudList(result.externalSupplies);
+  state.activityLog = cloudList(result.activityLog);
+  state.suppliers = result.vendors || [];
 
-  if (!Array.isArray(state.requests)) state.requests = [];
-  if (!Array.isArray(state.clinicStock)) state.clinicStock = [];
-  const requestCloud = result.supplyRequests;
-  if (requestCloud && !requestCloud.missing && !requestCloud.error) {
-    state.requests = await mergeRemoteRows(state.requests, requestCloud.rows || [], saveSupplyRequest);
-  }
-  const stockCloud = result.clinicInventory;
-  if (stockCloud && !stockCloud.missing && !stockCloud.error) {
-    state.clinicStock = await mergeRemoteRows(state.clinicStock, stockCloud.rows || [], saveClinicStock);
-  }
-  if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
-  const externalCloud = result.externalSupplies;
-  if (externalCloud && !externalCloud.missing && !externalCloud.error) {
-    state.externalSupplies = await mergeRemoteRows(state.externalSupplies, externalCloud.rows || [], saveExternalSupply);
-  }
-  if (!Array.isArray(state.activityLog)) state.activityLog = [];
-  const activityCloud = result.activityLog;
-  if (activityCloud && !activityCloud.missing && !activityCloud.error) {
-    state.activityLog = await mergeRemoteRows(state.activityLog, activityCloud.rows || [], saveActivity);
-  }
-
-  const cloudVendors = result.vendors || [];
-  restoreSuppliers(state);
-  if (cloudVendors.length) {
-    const byId = new Map(cloudVendors.map((row) => [String(row.id), row]));
-    const byName = new Map(cloudVendors.map((row) => [(row.name || "").trim().toLowerCase(), row]));
-    state.suppliers.forEach((row) => {
-      const nameKey = (row.name || "").trim().toLowerCase();
-      if (!byId.has(String(row.id)) && !byName.has(nameKey)) byId.set(String(row.id), row);
-    });
-    state.suppliers = [...byId.values()];
-  } else if (state.suppliers.length) {
-    state.suppliers = await uploadLocalRows(state.suppliers, insertVendor);
-  }
-
-  save(state);
   renderAll();
   return result;
 }

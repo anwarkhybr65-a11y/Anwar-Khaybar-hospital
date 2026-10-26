@@ -3,3 +3,13 @@ node_modules
 dist
 .vercel
 .env*
+
+# Local databases and exported data must not be committed or deployed
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+data/
+local-data/
+backups/
+*.local.json

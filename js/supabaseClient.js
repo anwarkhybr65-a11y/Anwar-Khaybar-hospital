@@ -186,6 +186,7 @@ function errorText(error) {
 function missingTable(error) {
   const msg = error?.message || "";
   const code = error?.code || "";
+  if (code === "PGRST204" || /could not find the '.*' column/i.test(msg)) return false;
   return code === "PGRST205" || code === "42P01" || /schema cache|does not exist|could not find the table/i.test(msg);
 }
 
@@ -825,7 +826,16 @@ export async function fetchExternalSupplies() {
 }
 
 export async function saveExternalSupply(row) {
-  return saveUuidRow("external_supplies", row, externalSupplyPayload(row), mapExternalSupply);
+  const payload = externalSupplyPayload(row);
+  let saved = await saveUuidRow("external_supplies", row, payload, mapExternalSupply);
+  const missingQtyColumns = saved.error && /stock|expiry_date/.test(saved.error) && /column|schema cache/i.test(saved.error);
+  if (!missingQtyColumns) return saved;
+  const basic = { ...payload };
+  delete basic.stock;
+  delete basic.expiry_date;
+  saved = await saveUuidRow("external_supplies", row, basic, mapExternalSupply);
+  if (!saved.error) saved.stockSkipped = true;
+  return saved;
 }
 
 export async function deleteExternalSupply(id) {
