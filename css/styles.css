@@ -265,6 +265,7 @@ textarea { min-height: 84px; resize: vertical; }
   box-shadow: var(--shadow);
 }
 .card h3 { margin: 0 0 14px; }
+.muted { color: var(--muted); margin-top: 0; }
 .module-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
@@ -496,10 +497,16 @@ th { color: var(--muted); font-size: 0.85rem; }
 
 .dash-cards {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   margin-bottom: 16px;
-  max-width: 920px;
+  max-width: 1200px;
+}
+.dash-card-cleaning.is-alert {
+  background: #f3faf6;
+  border-color: #b7e0c8;
+  border-inline-start: 5px solid #0d6e6e;
+  color: #0d4f4f;
 }
 .dash-card {
   display: flex;

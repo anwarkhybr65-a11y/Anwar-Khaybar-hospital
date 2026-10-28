@@ -20,6 +20,10 @@ import {
   manageAppUser,
   deleteExternalSupply,
   deleteClinicStock,
+  deleteCleaningItem,
+  deleteCleaningWithdrawal,
+  saveCleaningItem,
+  saveCleaningWithdrawal,
   saveClinicStock,
   saveActivity,
   saveExternalSupply,
@@ -68,6 +72,18 @@ const I18N = {
     emergencySupplies: "مستلزمات الطوارئ",
     warehouse: "المستودع",
     warehouseHint: "كميات مستلزمات الأسنان المتاحة. أي سحب من العيادات يخصم من هذه الكمية.",
+    cleaningWarehouse: "مستودع مستلزمات النظافة",
+    cleaningWarehouseHint: "أصناف النظافة والمطهرات والكميات المتاحة.",
+    cleaningWithdrawals: "مسحوبات النظافة",
+    cleaningWithdrawalsHint: "تسجيل سحب مستلزمات النظافة للأقسام، ويُخصم من رصيد المستودع.",
+    cleaningAvailable: "الأصناف المتوفرة",
+    minStock: "الحد الأدنى للتنبيه",
+    department: "القسم",
+    cleaningNeedSql: "نفّذ ملف sql/add_cleaning_supplies.sql مرة واحدة في Supabase لتفعيل مستلزمات النظافة.",
+    cleaningLowCard: "مواد النظافة قاربت على النفاد",
+    cleaningLowAlert: "تنبيه: يوجد {count} من مواد النظافة عند الحد الأدنى أو أقل. يلزم الشراء لتغطية النقص.",
+    cleaningLowClear: "لا توجد مواد نظافة قاربة على النفاد.",
+    cleaningLowTitle: "مواد النظافة التي تحتاج شراء",
     stockQty: "الكمية في المستودع (علب)",
     boxes: "علب",
     saveStock: "حفظ الكمية",
@@ -128,6 +144,11 @@ const I18N = {
     actExternalAdd: "إضافة مستلزم خارجي",
     actExternalUpdate: "تحديث كمية المستلزم الخارجي",
     actExternalDelete: "حذف مستلزم خارجي",
+    actCleaningAdd: "إضافة صنف نظافة",
+    actCleaningUpdate: "تعديل صنف نظافة",
+    actCleaningDelete: "حذف صنف نظافة",
+    actCleaningWithdraw: "سحب مستلزم نظافة",
+    actCleaningWithdrawDelete: "حذف مسحوب نظافة",
     actClinicNames: "تغيير أسماء العيادات",
     actClinicStockAdd: "إضافة صنف لمخزون العيادة",
     actUserCreate: "إنشاء حساب",
@@ -301,6 +322,18 @@ const I18N = {
     emergencySupplies: "Emergency supplies",
     warehouse: "Warehouse",
     warehouseHint: "Available dental supply quantities. Clinic withdrawals are deducted from this stock.",
+    cleaningWarehouse: "Cleaning supplies warehouse",
+    cleaningWarehouseHint: "Cleaning supplies, disinfectants, and available quantities.",
+    cleaningWithdrawals: "Cleaning withdrawals",
+    cleaningWithdrawalsHint: "Record cleaning supplies issued to departments. The warehouse balance is reduced automatically.",
+    cleaningAvailable: "Available items",
+    minStock: "Low-stock threshold",
+    department: "Department",
+    cleaningNeedSql: "Run sql/add_cleaning_supplies.sql once in Supabase to enable cleaning supplies.",
+    cleaningLowCard: "Cleaning supplies are running low",
+    cleaningLowAlert: "Alert: {count} cleaning items are at or below the minimum. Purchase is needed to cover the shortage.",
+    cleaningLowClear: "No cleaning supplies are running low.",
+    cleaningLowTitle: "Cleaning supplies that need purchasing",
     stockQty: "Warehouse quantity (boxes)",
     boxes: "boxes",
     saveStock: "Save quantity",
@@ -361,6 +394,11 @@ const I18N = {
     actExternalAdd: "Add external supply",
     actExternalUpdate: "Update external supply quantity",
     actExternalDelete: "Delete external supply",
+    actCleaningAdd: "Add cleaning item",
+    actCleaningUpdate: "Edit cleaning item",
+    actCleaningDelete: "Delete cleaning item",
+    actCleaningWithdraw: "Withdraw cleaning item",
+    actCleaningWithdrawDelete: "Delete cleaning withdrawal",
     actClinicNames: "Change clinic names",
     actClinicStockAdd: "Add a clinic inventory item",
     actUserCreate: "Create account",
@@ -548,6 +586,9 @@ function seed() {
     requests: [],
     clinicStock: [],
     externalSupplies: [],
+    cleaningItems: [],
+    cleaningWithdrawals: [],
+    cleaningMissing: false,
     activityLog: [],
   };
 }
@@ -704,6 +745,12 @@ function lowStockItems() {
   });
 }
 
+function lowCleaningItems() {
+  return (state.cleaningItems || [])
+    .filter((item) => Number(item.stock) <= Number(item.minStock))
+    .sort((a, b) => Number(a.stock) - Number(b.stock));
+}
+
 let dashPanel = null;
 
 function twoMonthLimit() {
@@ -779,6 +826,7 @@ function allProducts() {
 function productOptions() {
   return `<option value="">${t("selectProduct")}</option>` + allProducts()
     .map((p) => {
+      if (isStaff()) return `<option value="${p.id}">${p.itemName}</option>`;
       const stock = isDental(p) ? trackedStock(p) : null;
       const note = isDental(p) ? ` — ${stock == null ? "—" : stock} ${t("boxes")}` : ` — ${t("emergencySupplies")}`;
       return `<option value="${p.id}">${p.itemName}${note}</option>`;
@@ -974,8 +1022,10 @@ function renderDashboardAlerts() {
   }
   const low = lowStockItems().slice().sort((a, b) => trackedStock(a) - trackedStock(b));
   const expiring = expiryItems();
+  const cleaningLow = lowCleaningItems();
   const stockAlert = low.length ? t("lowStockCardAlert").replace("{count}", low.length) : t("lowStockCardClear");
   const expiryAlert = expiring.length ? t("expiryCardAlert").replace("{count}", expiring.length) : t("expiryCardClear");
+  const cleaningAlert = cleaningLow.length ? t("cleaningLowAlert").replace("{count}", cleaningLow.length) : t("cleaningLowClear");
   cards.innerHTML = `
     <button class="dash-card dash-card-stock${low.length ? " is-alert" : ""}${dashPanel === "stock" ? " active" : ""}" type="button" data-dash-panel="stock" aria-expanded="${dashPanel === "stock"}">
       <span class="dash-card-icon" aria-hidden="true">📦</span>
@@ -992,6 +1042,14 @@ function renderDashboardAlerts() {
         <span class="dash-card-alert">${expiryAlert}</span>
       </span>
       <span class="dash-card-count">${expiring.length}</span>
+    </button>
+    <button class="dash-card dash-card-cleaning${cleaningLow.length ? " is-alert" : ""}${dashPanel === "cleaning" ? " active" : ""}" type="button" data-dash-panel="cleaning" aria-expanded="${dashPanel === "cleaning"}">
+      <span class="dash-card-icon" aria-hidden="true">🧼</span>
+      <span class="dash-card-body">
+        <span class="dash-card-title">${t("cleaningLowCard")}</span>
+        <span class="dash-card-alert">${cleaningAlert}</span>
+      </span>
+      <span class="dash-card-count">${cleaningLow.length}</span>
     </button>`;
   if (dashPanel === "stock") {
     detail.hidden = false;
@@ -1032,6 +1090,20 @@ function renderDashboardAlerts() {
             <td><button class="btn btn-sm btn-danger" type="button" data-dispose-item="${escapeAttr(item.id)}">${t("dispose")}</button></td>
           </tr>`;
         })
+      )}`;
+  } else if (dashPanel === "cleaning") {
+    detail.hidden = false;
+    detail.innerHTML = `
+      <div class="dash-detail-head"><h3>${t("cleaningLowTitle")}</h3></div>
+      <p class="empty">${cleaningLow.length ? t("cleaningLowAlert").replace("{count}", cleaningLow.length) : t("cleaningLowClear")}</p>
+      ${table(
+        [t("itemName"), t("unitSize"), t("stockQty"), t("minStock")],
+        cleaningLow.map((item) => `<tr>
+          <td>${escapeAttr(item.itemName)}</td>
+          <td>${escapeAttr(item.unit)}</td>
+          <td class="stock-low">${Number(item.stock) || 0}</td>
+          <td>${Number(item.minStock) || 0}</td>
+        </tr>`)
       )}`;
   } else {
     detail.hidden = true;
@@ -1843,6 +1915,11 @@ function activityActionLabel(action) {
     external_add: "actExternalAdd",
     external_update: "actExternalUpdate",
     external_delete: "actExternalDelete",
+    cleaning_add: "actCleaningAdd",
+    cleaning_update: "actCleaningUpdate",
+    cleaning_delete: "actCleaningDelete",
+    cleaning_withdraw: "actCleaningWithdraw",
+    cleaning_withdraw_delete: "actCleaningWithdrawDelete",
     clinic_names: "actClinicNames",
     clinic_stock_add: "actClinicStockAdd",
     clinic_stock_delete: "actClinicStockDelete",
@@ -2122,9 +2199,7 @@ function requestChoices(kind) {
       return stock == null || stock > 0;
     })
     .map((item) => {
-      const stock = trackedStock(item);
-      const note = kind === "internal" && stock != null ? ` — ${stock} ${t("boxes")}` : "";
-      return { value: item.id, label: `${item.itemName}${note}`, max: "" };
+      return { value: item.id, label: item.itemName, max: "" };
     });
 }
 
@@ -2641,6 +2716,285 @@ async function removeExternalSupply(id) {
   persist();
 }
 
+function cleaningSqlNote() {
+  return state.cleaningMissing ? `<p class="clinic-alert">${t("cleaningNeedSql")}</p>` : "";
+}
+
+function cleaningSupplierOptions(selected) {
+  return `<option value="">${t("selectVendor")}</option>` + (state.suppliers || [])
+    .map((supplier) => `<option value="${escapeAttr(supplier.id)}" ${String(supplier.id) === String(selected) ? "selected" : ""}>${escapeAttr(supplier.name)}</option>`)
+    .join("");
+}
+
+function renderCleaning() {
+  const panel = document.getElementById("cleaning-panel");
+  if (!panel) return;
+  const items = state.cleaningItems || [];
+  const visible = isManager() ? items : items.filter((item) => Number(item.stock) > 0);
+  const form = isManager()
+    ? `<div class="card"><h3>${t("addItem")}</h3>
+        <form class="form-grid" id="cleaning-form">
+          <div><label>${t("itemName")}</label><input name="itemName" required /></div>
+          <div><label>${t("unitSize")}</label><input name="unit" required /></div>
+          <div><label>${t("itemType")}</label><input name="type" required /></div>
+          <div><label>${t("vendor")}</label><select name="supplierId">${cleaningSupplierOptions("")}</select></div>
+          <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
+          <div><label>${t("stockQty")}</label><input name="stock" type="number" min="0" step="1" required /></div>
+          <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" value="1" required /></div>
+          <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
+        </form>
+      </div>`
+    : "";
+  const headers = isManager()
+    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("stockQty"), t("minStock"), ""]
+    : [t("itemName"), t("unitSize"), t("itemType"), t("stockQty")];
+  const rows = visible.map((item) => {
+    const low = Number(item.stock) <= Number(item.minStock);
+    if (!isManager()) {
+      return `<tr>
+        <td>${escapeAttr(item.itemName)}</td>
+        <td>${escapeAttr(item.unit)}</td>
+        <td>${escapeAttr(item.type)}</td>
+        <td class="${low ? "stock-low" : ""}">${Number(item.stock) || 0}</td>
+      </tr>`;
+    }
+    const supplier = item.supplierName || supplierById(item.supplierId)?.name || "";
+    return `<tr>
+      <td>${escapeAttr(item.itemName)}</td>
+      <td>${escapeAttr(item.unit)}</td>
+      <td>${escapeAttr(item.type)}</td>
+      <td>${escapeAttr(supplier)}</td>
+      <td>${Number(item.price) || 0} ${t("currency")}</td>
+      <td class="${low ? "stock-low" : ""}">${Number(item.stock) || 0}</td>
+      <td>${Number(item.minStock) || 0}</td>
+      <td>
+        <button class="btn btn-sm btn-navy" type="button" data-edit-cleaning="${escapeAttr(item.id)}">${t("edit")}</button>
+        <button class="btn btn-sm btn-danger" type="button" data-del-cleaning="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
+      </td>
+    </tr>`;
+  });
+  panel.innerHTML = `${cleaningSqlNote()}${form}<div class="card table-wrap"><h3>${isManager() ? t("cleaningWarehouse") : t("cleaningAvailable")}</h3>${table(headers, rows)}</div>`;
+}
+
+function renderCleaningWithdrawals() {
+  const panel = document.getElementById("cleaning-withdrawals-panel");
+  if (!panel) return;
+  const available = (state.cleaningItems || []).filter((item) => Number(item.stock) > 0);
+  const options = available
+    .map((item) => {
+      const qty = isManager() ? ` — ${Number(item.stock) || 0}` : "";
+      return `<option value="${escapeAttr(item.id)}">${escapeAttr(item.itemName)}${qty}</option>`;
+    })
+    .join("");
+  const form = `<div class="card"><h3>${t("addWithdrawal")}</h3>
+      ${available.length ? `<form class="form-grid" id="cleaning-withdraw-form">
+        <div><label>${t("itemName")}</label><select name="itemId" required>${options}</select></div>
+        <div><label>${t("department")}</label><input name="department" required /></div>
+        <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+        <div><label>${t("date")}</label><input name="date" type="date" value="${todayISO()}" required /></div>
+        <div class="full"><button class="btn btn-primary" type="submit">${t("addWithdrawal")}</button></div>
+      </form>` : `<p class="empty">${t("noData")}</p>`}
+    </div>`;
+  const headers = isManager()
+    ? [t("date"), t("department"), t("itemName"), t("quantity"), t("unitPrice"), t("lineTotal"), ""]
+    : [t("date"), t("department"), t("itemName"), t("quantity")];
+  const rows = (state.cleaningWithdrawals || []).map((row) => {
+    const price = isManager()
+      ? `<td>${Number(row.unitPrice) || 0} ${t("currency")}</td><td>${(Number(row.quantity) || 0) * (Number(row.unitPrice) || 0)} ${t("currency")}</td>`
+      : "";
+    const remove = isManager()
+      ? `<td><button class="btn btn-sm btn-danger" type="button" data-del-cleaning-withdraw="${escapeAttr(row.id)}">${t("deleteVendor")}</button></td>`
+      : "";
+    return `<tr>
+      <td>${escapeAttr(row.date)}</td>
+      <td>${escapeAttr(row.department)}</td>
+      <td>${escapeAttr(row.itemName)}</td>
+      <td>${Number(row.quantity) || 0}</td>
+      ${price}
+      ${remove}
+    </tr>`;
+  });
+  panel.innerHTML = `${cleaningSqlNote()}${form}<div class="card table-wrap"><h3>${t("cleaningWithdrawals")}</h3>${table(headers, rows)}</div>`;
+}
+
+function openEditCleaning(id) {
+  if (!isManager()) return;
+  const item = (state.cleaningItems || []).find((row) => String(row.id) === String(id));
+  if (!item) return;
+  openModal(`
+    <h2>${t("edit")}</h2>
+    <form class="form-grid" id="edit-cleaning-form" onsubmit="event.preventDefault()">
+      <input type="hidden" name="id" value="${escapeAttr(item.id)}" />
+      <div><label>${t("itemName")}</label><input name="itemName" value="${escapeAttr(item.itemName)}" required /></div>
+      <div><label>${t("unitSize")}</label><input name="unit" value="${escapeAttr(item.unit)}" required /></div>
+      <div><label>${t("itemType")}</label><input name="type" value="${escapeAttr(item.type)}" required /></div>
+      <div><label>${t("vendor")}</label><select name="supplierId">${cleaningSupplierOptions(item.supplierId)}</select></div>
+      <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" value="${Number(item.price) || 0}" required /></div>
+      <div><label>${t("stockQty")}</label><input name="stock" type="number" min="0" step="1" value="${Number(item.stock) || 0}" required /></div>
+      <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" value="${Number(item.minStock) || 0}" required /></div>
+      <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
+    </form>
+  `);
+  document.getElementById("edit-cleaning-form").addEventListener("submit", (e) => {
+    e.preventDefault();
+    saveEditedCleaning(e.target);
+  });
+}
+
+async function saveCleaningRecord(item, action) {
+  const saved = await saveCleaningItem(item);
+  if (saved.missing) {
+    state.cleaningMissing = true;
+    alert(t("cleaningNeedSql"));
+    return null;
+  }
+  if (saved.error || !saved.row) {
+    notifyDbError(saved.error);
+    return null;
+  }
+  const index = (state.cleaningItems || []).findIndex((row) => String(row.id) === String(saved.row.id) || String(row.id) === String(item.id));
+  if (index >= 0) state.cleaningItems[index] = saved.row;
+  else state.cleaningItems.unshift(saved.row);
+  await recordActivity(action, item.itemName);
+  return saved.row;
+}
+
+async function addCleaningItem(form) {
+  if (!isManager()) return;
+  const data = new FormData(form);
+  const supplierId = String(data.get("supplierId") || "");
+  const item = {
+    id: crypto.randomUUID(),
+    itemName: String(data.get("itemName") || "").trim(),
+    unit: String(data.get("unit") || "").trim(),
+    type: String(data.get("type") || "").trim(),
+    supplierId,
+    supplierName: supplierById(supplierId)?.name || "",
+    price: Number(data.get("price")) || 0,
+    stock: Number(data.get("stock")) || 0,
+    minStock: Number(data.get("minStock")) || 0,
+  };
+  if (!item.itemName) return;
+  const saved = await saveCleaningRecord(item, "cleaning_add");
+  if (!saved) return;
+  form.reset();
+  persist();
+}
+
+async function saveEditedCleaning(form) {
+  if (!isManager()) return;
+  const data = new FormData(form);
+  const item = (state.cleaningItems || []).find((row) => String(row.id) === String(data.get("id")));
+  if (!item) return;
+  const supplierId = String(data.get("supplierId") || "");
+  item.itemName = String(data.get("itemName") || "").trim();
+  item.unit = String(data.get("unit") || "").trim();
+  item.type = String(data.get("type") || "").trim();
+  item.supplierId = supplierId;
+  item.supplierName = supplierById(supplierId)?.name || "";
+  item.price = Number(data.get("price")) || 0;
+  item.stock = Number(data.get("stock")) || 0;
+  item.minStock = Number(data.get("minStock")) || 0;
+  if (!item.itemName) return;
+  const saved = await saveCleaningRecord(item, "cleaning_update");
+  if (!saved) return;
+  closeModal();
+  persist();
+}
+
+async function removeCleaningItem(id) {
+  if (!isManager()) return;
+  const item = (state.cleaningItems || []).find((row) => String(row.id) === String(id));
+  if (!item || !confirm(t("confirmDeleteItem"))) return;
+  const result = await deleteCleaningItem(item.id);
+  if (result.error) {
+    notifyDbError(result.error);
+    return;
+  }
+  state.cleaningItems = (state.cleaningItems || []).filter((row) => String(row.id) !== String(id));
+  await recordActivity("cleaning_delete", item.itemName);
+  persist();
+}
+
+async function changeCleaningStock(item, delta) {
+  const previous = Number(item.stock) || 0;
+  const next = previous + delta;
+  if (next < 0) return false;
+  item.stock = next;
+  const saved = await saveCleaningItem(item);
+  if (saved.missing || saved.error || !saved.row) {
+    item.stock = previous;
+    if (saved.missing) {
+      state.cleaningMissing = true;
+      alert(t("cleaningNeedSql"));
+    } else notifyDbError(saved.error);
+    return false;
+  }
+  Object.assign(item, saved.row, { stock: next });
+  return true;
+}
+
+async function addCleaningWithdrawal(form) {
+  const data = new FormData(form);
+  const item = (state.cleaningItems || []).find((row) => String(row.id) === String(data.get("itemId")));
+  const quantity = Number(data.get("quantity"));
+  const department = String(data.get("department") || "").trim();
+  if (!item || !department || !Number.isFinite(quantity) || quantity < 1) return;
+  if (quantity > Number(item.stock)) {
+    alert(t("insufficientStock"));
+    return;
+  }
+  const row = {
+    id: crypto.randomUUID(),
+    itemId: item.id,
+    itemName: item.itemName,
+    unit: item.unit,
+    department,
+    quantity,
+    unitPrice: Number(item.price) || 0,
+    date: String(data.get("date") || todayISO()),
+  };
+  const saved = await saveCleaningWithdrawal(row);
+  if (saved.missing) {
+    state.cleaningMissing = true;
+    alert(t("cleaningNeedSql"));
+    return;
+  }
+  if (saved.error || !saved.row) {
+    notifyDbError(saved.error);
+    return;
+  }
+  const reduced = await changeCleaningStock(item, -quantity);
+  if (!reduced) {
+    await deleteCleaningWithdrawal(saved.row.id);
+    return;
+  }
+  state.cleaningWithdrawals.unshift(saved.row);
+  await recordActivity("cleaning_withdraw", `${department} — ${item.itemName} — ${quantity}`);
+  form.reset();
+  persist();
+}
+
+async function removeCleaningWithdrawal(id) {
+  if (!isManager()) return;
+  const row = (state.cleaningWithdrawals || []).find((item) => String(item.id) === String(id));
+  if (!row || !confirm(t("confirmDeleteWithdrawal"))) return;
+  const item = (state.cleaningItems || []).find((entry) => String(entry.id) === String(row.itemId));
+  if (item) {
+    const restored = await changeCleaningStock(item, Number(row.quantity) || 0);
+    if (!restored) return;
+  }
+  const result = await deleteCleaningWithdrawal(row.id);
+  if (result.error) {
+    if (item) await changeCleaningStock(item, -(Number(row.quantity) || 0));
+    notifyDbError(result.error);
+    return;
+  }
+  state.cleaningWithdrawals = (state.cleaningWithdrawals || []).filter((entry) => String(entry.id) !== String(id));
+  await recordActivity("cleaning_withdraw_delete", `${row.department} — ${row.itemName} — ${row.quantity}`);
+  persist();
+}
+
 function renderAll() {
   applyI18n();
   fillSelects();
@@ -2650,6 +3004,8 @@ function renderAll() {
   renderRequests();
   renderClinicStock();
   renderExternalSupplies();
+  renderCleaning();
+  renderCleaningWithdrawals();
 }
 
 document.getElementById("login-form").addEventListener("submit", async (e) => {
@@ -2989,6 +3345,34 @@ document.getElementById("page-clinic-stock").addEventListener("click", async (e)
   const button = e.target.closest("[data-del-clinic]");
   if (!button) return;
   await removeClinicStock(button.dataset.delClinic);
+});
+
+document.getElementById("page-cleaning").addEventListener("submit", async (e) => {
+  if (e.target.id !== "cleaning-form") return;
+  e.preventDefault();
+  await addCleaningItem(e.target);
+});
+
+document.getElementById("page-cleaning").addEventListener("click", async (e) => {
+  const editBtn = e.target.closest("[data-edit-cleaning]");
+  if (editBtn) {
+    openEditCleaning(editBtn.dataset.editCleaning);
+    return;
+  }
+  const deleteBtn = e.target.closest("[data-del-cleaning]");
+  if (deleteBtn) await removeCleaningItem(deleteBtn.dataset.delCleaning);
+});
+
+document.getElementById("page-cleaning-withdrawals").addEventListener("submit", async (e) => {
+  if (e.target.id !== "cleaning-withdraw-form") return;
+  e.preventDefault();
+  await addCleaningWithdrawal(e.target);
+});
+
+document.getElementById("page-cleaning-withdrawals").addEventListener("click", async (e) => {
+  const button = e.target.closest("[data-del-cleaning-withdraw]");
+  if (!button) return;
+  await removeCleaningWithdrawal(button.dataset.delCleaningWithdraw);
 });
 
 document.getElementById("clinic-report-list").addEventListener("click", (e) => {
@@ -3342,6 +3726,9 @@ async function hydrateFromDatabase() {
   state.clinicStock = cloudList(result.clinicInventory);
   state.externalSupplies = cloudList(result.externalSupplies);
   state.activityLog = cloudList(result.activityLog);
+  state.cleaningItems = cloudList(result.cleaningInventory);
+  state.cleaningWithdrawals = cloudList(result.cleaningWithdrawals);
+  state.cleaningMissing = Boolean(result.cleaningInventory?.missing || result.cleaningWithdrawals?.missing);
   state.suppliers = result.vendors || [];
 
   renderAll();

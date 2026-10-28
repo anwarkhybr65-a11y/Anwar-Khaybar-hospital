@@ -887,6 +887,91 @@ export async function saveActivity(row) {
   return saveUuidRow("activity_log", row, activityPayload(row), mapActivity);
 }
 
+export function mapCleaningItem(row) {
+  return {
+    id: row.id,
+    itemName: row.item_name || "",
+    unit: row.unit || "",
+    type: row.item_type || "",
+    supplierId: row.supplier_id || "",
+    supplierName: row.supplier_name || "",
+    price: Number(row.price) || 0,
+    stock: Number(row.stock) || 0,
+    minStock: Number(row.min_stock) || 0,
+  };
+}
+
+function cleaningItemPayload(row) {
+  return {
+    item_name: row.itemName || "",
+    unit: row.unit || "",
+    item_type: row.type || "",
+    supplier_id: String(row.supplierId || ""),
+    supplier_name: row.supplierName || "",
+    price: Number(row.price) || 0,
+    stock: Number(row.stock) || 0,
+    min_stock: Number(row.minStock) || 0,
+    updated_at: new Date().toISOString(),
+  };
+}
+
+export function mapCleaningWithdrawal(row) {
+  return {
+    id: row.id,
+    itemId: row.item_id || "",
+    itemName: row.item_name || "",
+    unit: row.unit || "",
+    department: row.department || "",
+    quantity: Number(row.quantity) || 0,
+    unitPrice: Number(row.unit_price) || 0,
+    date: row.withdrawn_at ? String(row.withdrawn_at).slice(0, 10) : "",
+  };
+}
+
+function cleaningWithdrawalPayload(row) {
+  return {
+    item_id: row.itemId || null,
+    item_name: row.itemName || "",
+    unit: row.unit || "",
+    department: row.department || "",
+    quantity: Number(row.quantity) || 0,
+    unit_price: Number(row.unitPrice) || 0,
+    withdrawn_at: row.date || null,
+  };
+}
+
+export async function fetchCleaningInventory() {
+  return fetchOptional("cleaning_inventory", mapCleaningItem, { column: "item_name", ascending: true });
+}
+
+export async function saveCleaningItem(row) {
+  return saveUuidRow("cleaning_inventory", row, cleaningItemPayload(row), mapCleaningItem);
+}
+
+export async function deleteCleaningItem(id) {
+  if (!isUuid(id)) return { error: null, missing: false };
+  const { error } = await supabase.from("cleaning_inventory").delete().eq("id", id);
+  if (error && missingTable(error)) return { error: null, missing: true };
+  if (error) return { error: error.message, missing: false };
+  return { error: null, missing: false };
+}
+
+export async function fetchCleaningWithdrawals() {
+  return fetchOptional("cleaning_withdrawals", mapCleaningWithdrawal, { column: "withdrawn_at", ascending: false });
+}
+
+export async function saveCleaningWithdrawal(row) {
+  return saveUuidRow("cleaning_withdrawals", row, cleaningWithdrawalPayload(row), mapCleaningWithdrawal);
+}
+
+export async function deleteCleaningWithdrawal(id) {
+  if (!isUuid(id)) return { error: null, missing: false };
+  const { error } = await supabase.from("cleaning_withdrawals").delete().eq("id", id);
+  if (error && missingTable(error)) return { error: null, missing: true };
+  if (error) return { error: error.message, missing: false };
+  return { error: null, missing: false };
+}
+
 export async function loginUser(username, password) {
   const { data, error } = await supabase.rpc("login_app_user", {
     p_username: username,
@@ -938,7 +1023,7 @@ export async function loadProcurementData() {
       error: connection.message,
     };
   }
-  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames, supplyRequests, clinicInventory, externalSupplies, activityLog] =
+  const [supplies, withdrawals, reports, vendors, archiveWithdrawals, archivePrices, dentalWarehouse, emergencySupplies, withdrawalLog, disposalLog, clinicNames, supplyRequests, clinicInventory, externalSupplies, activityLog, cleaningInventory, cleaningWithdrawals] =
     await Promise.all([
       fetchSupplies(),
       fetchWithdrawals(),
@@ -955,6 +1040,8 @@ export async function loadProcurementData() {
       fetchClinicInventory(),
       fetchExternalSupplies(),
       fetchActivityLog(),
+      fetchCleaningInventory(),
+      fetchCleaningWithdrawals(),
     ]);
   const error =
     supplies.error ||
@@ -985,6 +1072,8 @@ export async function loadProcurementData() {
     clinicInventory,
     externalSupplies,
     activityLog,
+    cleaningInventory,
+    cleaningWithdrawals,
     error,
   };
 }

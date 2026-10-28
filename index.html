@@ -36,6 +36,8 @@
       <button class="nav-btn" data-page="external" data-manager-only data-i18n="externalSupplies">المستلزمات الخارجية</button>
       <button class="nav-btn" data-page="supplies" data-manager-only data-i18n="dentalSupplies">مستلزمات الأسنان</button>
       <button class="nav-btn" data-page="emergency" data-manager-only data-i18n="emergencySupplies">مستلزمات الطوارئ</button>
+      <button class="nav-btn" data-page="cleaning" data-i18n="cleaningWarehouse">مستودع مستلزمات النظافة</button>
+      <button class="nav-btn" data-page="cleaning-withdrawals" data-i18n="cleaningWithdrawals">مسحوبات النظافة</button>
       <button class="nav-btn" data-page="archive" data-manager-only data-i18n="archive">أرشيف</button>
     </aside>
 
@@ -59,6 +61,8 @@
             <button class="module-btn" type="button" data-module="clinic-stock"><span class="report-icon">🏥</span><span data-nav-clinic data-i18n="clinicStocks">مخزون العيادات</span></button>
             <button class="module-btn" type="button" data-module="withdrawals"><span class="report-icon">📤</span><span data-nav-withdrawals data-i18n="withdrawals">مسحوبات العيادات</span></button>
             <button class="module-btn" type="button" data-module="warehouse" data-manager-only><span class="report-icon">🏬</span><span data-i18n="warehouse">المستودع</span></button>
+            <button class="module-btn" type="button" data-module="cleaning"><span class="report-icon">🧼</span><span data-i18n="cleaningWarehouse">مستودع مستلزمات النظافة</span></button>
+            <button class="module-btn" type="button" data-module="cleaning-withdrawals"><span class="report-icon">🧴</span><span data-i18n="cleaningWithdrawals">مسحوبات النظافة</span></button>
           </div>
           <div id="staff-alerts"></div>
           <div class="dash-cards" id="dash-cards" data-manager-only></div>
@@ -152,6 +156,18 @@
           <div class="subpage" id="sub-diffs">
             <div id="price-diffs"></div>
           </div>
+        </section>
+
+        <section class="page" id="page-cleaning">
+          <h2 class="page-title" data-i18n="cleaningWarehouse">مستودع مستلزمات النظافة</h2>
+          <p class="muted" data-i18n="cleaningWarehouseHint">أصناف النظافة والمطهرات والكميات المتاحة.</p>
+          <div id="cleaning-panel"></div>
+        </section>
+
+        <section class="page" id="page-cleaning-withdrawals">
+          <h2 class="page-title" data-i18n="cleaningWithdrawals">مسحوبات النظافة</h2>
+          <p class="muted" data-i18n="cleaningWithdrawalsHint">تسجيل سحب مستلزمات النظافة للأقسام، ويُخصم من رصيد المستودع.</p>
+          <div id="cleaning-withdrawals-panel"></div>
         </section>
 
         <section class="page" id="page-emergency">
