@@ -2781,10 +2781,7 @@ function renderCleaningWithdrawals() {
   if (!panel) return;
   const available = (state.cleaningItems || []).filter((item) => Number(item.stock) > 0);
   const options = available
-    .map((item) => {
-      const qty = isManager() ? ` — ${Number(item.stock) || 0}` : "";
-      return `<option value="${escapeAttr(item.id)}">${escapeAttr(item.itemName)}${qty}</option>`;
-    })
+    .map((item) => `<option value="${escapeAttr(item.id)}">${escapeAttr(item.itemName)}</option>`)
     .join("");
   const form = `<div class="card"><h3>${t("addWithdrawal")}</h3>
       ${available.length ? `<form class="form-grid" id="cleaning-withdraw-form">
