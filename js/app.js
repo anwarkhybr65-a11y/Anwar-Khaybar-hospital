@@ -689,7 +689,7 @@ function applyAccess() {
   }
 }
 
-const MANAGER_PAGES = new Set(["supplies", "emergency", "archive", "warehouse", "external"]);
+const MANAGER_PAGES = new Set(["supplies", "emergency", "archive", "warehouse", "external", "cleaning", "cleaning-withdrawals"]);
 
 function openPage(page) {
   if (state.session && isStaff() && MANAGER_PAGES.has(page)) page = "dashboard";
