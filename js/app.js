@@ -88,6 +88,7 @@ const I18N = {
     boxes: "علب",
     saveStock: "حفظ الكمية",
     externalQtyPending: "لم تُحفظ الكمية وتاريخ الصلاحية. شغّل ملف sql/add_external_supply_qty.sql مرة واحدة في قاعدة البيانات ثم أعد الحفظ.",
+    externalQtySaved: "تم حفظ الكمية",
     lowStockTitle: "تنبيه: منتجات على وشك النفاد",
     lowStockItem: "الكمية المتبقية من {name} هي {qty} علب، والمنتج على وشك النفاد.",
     lowStockCard: "قاربت على النفاد",
@@ -341,6 +342,7 @@ const I18N = {
     boxes: "boxes",
     saveStock: "Save quantity",
     externalQtyPending: "Quantity and expiry were not saved. Run sql/add_external_supply_qty.sql once in the database, then save again.",
+    externalQtySaved: "Quantity saved",
     lowStockTitle: "Alert: items are running low",
     lowStockItem: "{name} has {qty} boxes left and is about to run out.",
     lowStockCard: "Running low",
@@ -2583,6 +2585,15 @@ function userAdminHtml() {
     </form>`;
 }
 
+let externalQtyNotice = null;
+
+function externalQtyStatus(item) {
+  if (!externalQtyNotice || String(externalQtyNotice.id) !== String(item.id)) return "";
+  if (!externalQtyNotice.ok) return `<div class="clinic-alert">${t("externalQtyPending")}</div>`;
+  const expiry = externalQtyNotice.expiry ? ` — ${escapeAttr(externalQtyNotice.expiry)}` : "";
+  return `<div class="qty-saved">${t("externalQtySaved")}: ${Number(externalQtyNotice.stock) || 0}${expiry}</div>`;
+}
+
 function renderExternalSupplies() {
   const panel = document.getElementById("external-supply-panel");
   if (!panel) return;
@@ -2620,6 +2631,7 @@ function renderExternalSupplies() {
         <button class="btn btn-sm btn-navy" type="button" data-edit-external="${escapeAttr(item.id)}">${t("edit")}</button>
         <button class="btn btn-sm btn-primary" type="button" data-save-external="${escapeAttr(item.id)}">${t("saveStock")}</button>
         <button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
+        ${externalQtyStatus(item)}
       </td>
     </tr>`;
   });
@@ -2660,19 +2672,39 @@ async function saveExternalSupplyDetails(id) {
   if (!item || !row) return;
   const stock = Number(row.querySelector("[data-external-stock]")?.value);
   if (!Number.isFinite(stock) || stock < 0) return;
+  const previousStock = item.stock;
+  const previousExpiry = item.expiryDate || "";
+  const expiryDate = row.querySelector("[data-external-expiry]")?.value || "";
   item.stock = stock;
-  item.expiryDate = row.querySelector("[data-external-expiry]")?.value || "";
+  item.expiryDate = expiryDate;
   const saved = await saveExternalSupply(item);
   if (saved.error) {
+    item.stock = previousStock;
+    item.expiryDate = previousExpiry;
+    externalQtyNotice = null;
     notifyDbError(saved.error);
     return;
   }
   if (saved.stockSkipped) {
+    item.stock = previousStock;
+    item.expiryDate = previousExpiry;
+    externalQtyNotice = { id: item.id, ok: false };
     alert(t("externalQtyPending"));
+    persist();
     return;
   }
-  if (saved.row) Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate });
-  await recordActivity("external_update", `${item.itemName} — ${item.stock}${item.expiryDate ? ` — ${item.expiryDate}` : ""}`);
+  if (saved.row) Object.assign(item, saved.row);
+  const storedStock = Number(item.stock) || 0;
+  const storedExpiry = item.expiryDate || "";
+  externalQtyNotice = {
+    id: item.id,
+    ok: storedStock === stock && storedExpiry === expiryDate,
+    stock: storedStock,
+    expiry: storedExpiry,
+  };
+  if (Number(previousStock) !== storedStock || previousExpiry !== storedExpiry) {
+    await recordActivity("external_update", `${item.itemName} — ${storedStock}${storedExpiry ? ` — ${storedExpiry}` : ""}`);
+  }
   persist();
 }
 
@@ -3287,6 +3319,16 @@ document.getElementById("page-external").addEventListener("submit", async (e) =>
   if (e.target.id !== "external-supply-form") return;
   e.preventDefault();
   await addExternalSupply(e.target);
+});
+
+document.getElementById("page-external").addEventListener("input", (e) => {
+  const field = e.target.closest("[data-external-stock], [data-external-expiry]");
+  if (!field || !externalQtyNotice) return;
+  const rowId = field.closest("tr")?.querySelector("[data-save-external]")?.dataset.saveExternal;
+  if (rowId && String(rowId) === String(externalQtyNotice.id)) {
+    externalQtyNotice = null;
+    field.closest("tr")?.querySelector(".qty-saved, .clinic-alert")?.remove();
+  }
 });
 
 document.getElementById("page-external").addEventListener("click", async (e) => {
