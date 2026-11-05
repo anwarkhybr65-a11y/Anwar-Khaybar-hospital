@@ -88,7 +88,7 @@ const I18N = {
     boxes: "علب",
     saveStock: "حفظ الكمية",
     externalQtyPending: "لم تُحفظ الكمية وتاريخ الصلاحية. شغّل ملف sql/add_external_supply_qty.sql مرة واحدة في قاعدة البيانات ثم أعد الحفظ.",
-    externalQtySaved: "تم حفظ الكمية",
+    externalQtySaved: "تم حفظ الكمية في المستودع",
     lowStockTitle: "تنبيه: منتجات على وشك النفاد",
     lowStockItem: "الكمية المتبقية من {name} هي {qty} علب، والمنتج على وشك النفاد.",
     lowStockCard: "قاربت على النفاد",
@@ -342,7 +342,7 @@ const I18N = {
     boxes: "boxes",
     saveStock: "Save quantity",
     externalQtyPending: "Quantity and expiry were not saved. Run sql/add_external_supply_qty.sql once in the database, then save again.",
-    externalQtySaved: "Quantity saved",
+    externalQtySaved: "Quantity saved in the warehouse",
     lowStockTitle: "Alert: items are running low",
     lowStockItem: "{name} has {qty} boxes left and is about to run out.",
     lowStockCard: "Running low",
@@ -2636,29 +2636,36 @@ function renderExternalSupplies() {
       </div>`
     : "";
   const headers = canSeePrices()
-    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), ""]
+    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("quantity"), t("expiryDate"), ""]
     : [t("itemName"), t("unitSize"), t("itemType")];
   const rows = items.map((item) => {
     const supplier = item.supplierName || supplierById(item.supplierId)?.name || "";
     if (!canSeePrices()) {
       return `<tr><td>${escapeAttr(item.itemName)}</td><td>${escapeAttr(item.unit)}</td><td>${escapeAttr(item.type)}</td></tr>`;
     }
+    const warehouse = (state.supplyItems || []).find((entry) => String(entry.sourceId) === String(item.id));
+    const stockValue = warehouse ? (warehouse.stock == null || warehouse.stock === "" ? "" : warehouse.stock) : (Number(item.stock) || 0);
+    const expiryValue = warehouse ? warehouse.expiryDate || "" : item.expiryDate || "";
     return `<tr>
       <td>${escapeAttr(item.itemName)}</td>
       <td>${escapeAttr(item.unit)}</td>
       <td>${escapeAttr(item.type)}</td>
       <td>${escapeAttr(supplier)}</td>
       <td>${Number(item.price) || 0} ${t("currency")}</td>
+      <td><input data-external-stock type="number" min="0" step="1" value="${escapeAttr(stockValue)}" style="max-width:110px" /></td>
+      <td><input data-external-expiry type="date" value="${escapeAttr(expiryValue)}" /></td>
       <td>
         <button class="btn btn-sm btn-navy" type="button" data-edit-external="${escapeAttr(item.id)}">${t("edit")}</button>
+        <button class="btn btn-sm btn-primary" type="button" data-save-external="${escapeAttr(item.id)}">${t("saveStock")}</button>
         <button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
+        ${externalQtyStatus(item)}
       </td>
     </tr>`;
   });
   panel.innerHTML = `${form}<div class="card table-wrap"><h3>${t("externalSupplies")}</h3>${table(headers, rows)}</div>`;
 }
 
-async function syncExternalStockToWarehouse(item, { preserveQuantity = false } = {}) {
+async function syncExternalStockToWarehouse(item, { preserveQuantity = false, applyQuantity = false } = {}) {
   const existing = (state.supplyItems || []).find((entry) => String(entry.sourceId) === String(item.id));
   const mirror = {
     id: item.id,
@@ -2669,8 +2676,8 @@ async function syncExternalStockToWarehouse(item, { preserveQuantity = false } =
     supplierId: item.supplierId || "",
     supplierName: item.supplierName || "",
     price: Number(item.price) || 0,
-    stock: preserveQuantity && existing ? existing.stock : null,
-    expiryDate: preserveQuantity && existing ? existing.expiryDate || "" : "",
+    stock: applyQuantity ? Number(item.stock) || 0 : preserveQuantity && existing ? existing.stock : null,
+    expiryDate: applyQuantity ? item.expiryDate || "" : preserveQuantity && existing ? existing.expiryDate || "" : "",
     damaged: preserveQuantity && existing ? existing.damaged === true : false,
   };
   const result = await updateSupply(mirror, state.suppliers);
@@ -2745,7 +2752,16 @@ async function saveExternalSupplyDetails(id) {
     persist();
     return;
   }
-  if (saved.row) Object.assign(item, saved.row);
+  if (saved.row) Object.assign(item, saved.row, { stock, expiryDate });
+  const synced = await syncExternalStockToWarehouse(item, { applyQuantity: true });
+  if (!synced.ok) {
+    item.stock = previousStock;
+    item.expiryDate = previousExpiry;
+    externalQtyNotice = { id: item.id, ok: false };
+    notifyDbError(synced.error);
+    persist();
+    return;
+  }
   const storedStock = Number(item.stock) || 0;
   const storedExpiry = item.expiryDate || "";
   externalQtyNotice = {
@@ -2757,8 +2773,6 @@ async function saveExternalSupplyDetails(id) {
   if (Number(previousStock) !== storedStock || previousExpiry !== storedExpiry) {
     await recordActivity("external_update", `${item.itemName} — ${storedStock}${storedExpiry ? ` — ${storedExpiry}` : ""}`);
   }
-  const synced = await syncExternalStockToWarehouse(item);
-  if (!synced.ok) notifyDbError(synced.error);
   persist();
 }
 
