@@ -2631,14 +2631,12 @@ function renderExternalSupplies() {
           <div><label>${t("itemType")}</label><input name="type" required /></div>
           <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
           <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
-          <div><label>${t("quantity")}</label><input name="stock" type="number" min="0" step="1" required /></div>
-          <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
       </div>`
     : "";
   const headers = canSeePrices()
-    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("quantity"), t("expiryDate"), ""]
+    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), ""]
     : [t("itemName"), t("unitSize"), t("itemType")];
   const rows = items.map((item) => {
     const supplier = item.supplierName || supplierById(item.supplierId)?.name || "";
@@ -2651,20 +2649,17 @@ function renderExternalSupplies() {
       <td>${escapeAttr(item.type)}</td>
       <td>${escapeAttr(supplier)}</td>
       <td>${Number(item.price) || 0} ${t("currency")}</td>
-      <td><input data-external-stock type="number" min="0" step="1" value="${Number(item.stock) || 0}" style="max-width:110px" /></td>
-      <td><input data-external-expiry type="date" value="${escapeAttr(item.expiryDate || "")}" /></td>
       <td>
         <button class="btn btn-sm btn-navy" type="button" data-edit-external="${escapeAttr(item.id)}">${t("edit")}</button>
-        <button class="btn btn-sm btn-primary" type="button" data-save-external="${escapeAttr(item.id)}">${t("saveStock")}</button>
         <button class="btn btn-sm btn-danger" type="button" data-del-external="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
-        ${externalQtyStatus(item)}
       </td>
     </tr>`;
   });
   panel.innerHTML = `${form}<div class="card table-wrap"><h3>${t("externalSupplies")}</h3>${table(headers, rows)}</div>`;
 }
 
-async function syncExternalStockToWarehouse(item) {
+async function syncExternalStockToWarehouse(item, { preserveQuantity = false } = {}) {
+  const existing = (state.supplyItems || []).find((entry) => String(entry.sourceId) === String(item.id));
   const mirror = {
     id: item.id,
     category: "dental",
@@ -2674,9 +2669,9 @@ async function syncExternalStockToWarehouse(item) {
     supplierId: item.supplierId || "",
     supplierName: item.supplierName || "",
     price: Number(item.price) || 0,
-    stock: Number(item.stock) || 0,
-    expiryDate: item.expiryDate || "",
-    damaged: false,
+    stock: preserveQuantity && existing ? existing.stock : null,
+    expiryDate: preserveQuantity && existing ? existing.expiryDate || "" : "",
+    damaged: preserveQuantity && existing ? existing.damaged === true : false,
   };
   const result = await updateSupply(mirror, state.suppliers);
   if (result.error || !result.row) return { ok: false, error: result.error || t("dbSaveError") };
@@ -2695,7 +2690,6 @@ async function addExternalSupply(form) {
   if (!isManager()) return;
   const data = new FormData(form);
   const supplierId = String(data.get("supplierId") || "");
-  const stock = Number(data.get("stock"));
   const row = {
     id: crypto.randomUUID(),
     itemName: String(data.get("itemName") || "").trim(),
@@ -2704,27 +2698,21 @@ async function addExternalSupply(form) {
     supplierId,
     supplierName: supplierById(supplierId)?.name || "",
     price: Number(data.get("price")) || 0,
-    stock: Number.isFinite(stock) && stock > 0 ? stock : 0,
-    expiryDate: String(data.get("expiryDate") || ""),
+    stock: 0,
+    expiryDate: "",
   };
-  if (!row.itemName || !Number.isFinite(stock) || stock < 0) return;
+  if (!row.itemName) return;
   const saved = await saveExternalSupply(row);
   if (saved.error) {
     notifyDbError(saved.error);
     return;
   }
-  const stored = { ...row, ...(saved.row || {}) };
-  if (saved.stockSkipped) {
-    stored.stock = 0;
-    stored.expiryDate = "";
-    alert(t("externalQtyPending"));
-  } else {
-    const synced = await syncExternalStockToWarehouse(stored);
-    if (!synced.ok) notifyDbError(synced.error);
-  }
+  const stored = { ...row, ...(saved.row || {}), stock: 0, expiryDate: "" };
+  const synced = await syncExternalStockToWarehouse(stored);
+  if (!synced.ok) notifyDbError(synced.error);
   if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
   state.externalSupplies.unshift(stored);
-  await recordActivity("external_add", `${stored.itemName} — ${stored.stock}`);
+  await recordActivity("external_add", stored.itemName);
   form.reset();
   persist();
 }
@@ -2818,7 +2806,7 @@ async function saveEditedExternal(form) {
     return;
   }
   if (saved.row) Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate });
-  const synced = await syncExternalStockToWarehouse(item);
+  const synced = await syncExternalStockToWarehouse(item, { preserveQuantity: true });
   if (!synced.ok) notifyDbError(synced.error);
   await recordActivity("external_update", item.itemName);
   closeModal();
