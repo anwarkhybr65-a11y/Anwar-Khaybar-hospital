@@ -727,14 +727,28 @@ function itemNameKey(name) {
   return (name || "").trim().toLowerCase();
 }
 
+function normalizeSearchText(value) {
+  return String(value || "")
+    .normalize("NFKC")
+    .replace(/[\u064B-\u065F\u0670\u0640]/g, "")
+    .replace(/[أإآٱ]/g, "ا")
+    .replace(/[ىیي]/g, "ي")
+    .replace(/[کك]/g, "ك")
+    .replace(/ة/g, "ه")
+    .replace(/[\u200c\u200d\u200e\u200f\u061c\u202a-\u202e\u2066-\u2069]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+}
+
 function catalogQuery(key) {
-  return (document.querySelector(`[data-catalog-search="${key}"]`)?.value || "").trim().toLowerCase();
+  return normalizeSearchText(document.querySelector(`[data-catalog-search="${key}"]`)?.value || "");
 }
 
 function matchesCatalogName(name, key) {
   const query = catalogQuery(key);
   if (!query) return true;
-  return String(name || "").toLowerCase().includes(query);
+  return normalizeSearchText(name).includes(query);
 }
 
 function itemPrice(item) {
@@ -2617,6 +2631,8 @@ function renderExternalSupplies() {
           <div><label>${t("itemType")}</label><input name="type" required /></div>
           <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
           <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
+          <div><label>${t("quantity")}</label><input name="stock" type="number" min="0" step="1" required /></div>
+          <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
       </div>`
@@ -2648,10 +2664,38 @@ function renderExternalSupplies() {
   panel.innerHTML = `${form}<div class="card table-wrap"><h3>${t("externalSupplies")}</h3>${table(headers, rows)}</div>`;
 }
 
+async function syncExternalStockToWarehouse(item) {
+  const mirror = {
+    id: item.id,
+    category: "dental",
+    itemName: item.itemName,
+    unit: item.unit || "",
+    type: item.type || "",
+    supplierId: item.supplierId || "",
+    supplierName: item.supplierName || "",
+    price: Number(item.price) || 0,
+    stock: Number(item.stock) || 0,
+    expiryDate: item.expiryDate || "",
+    damaged: false,
+  };
+  const result = await updateSupply(mirror, state.suppliers);
+  if (result.error || !result.row) return { ok: false, error: result.error || t("dbSaveError") };
+  const row = result.row;
+  if (row.expiryDate === undefined) row.expiryDate = mirror.expiryDate;
+  if (row.damaged === undefined) row.damaged = false;
+  const index = (state.supplyItems || []).findIndex(
+    (entry) => String(entry.sourceId) === String(item.id) || String(entry.id) === String(row.id)
+  );
+  if (index >= 0) state.supplyItems[index] = { ...state.supplyItems[index], ...row, category: "dental" };
+  else state.supplyItems.unshift({ ...row, category: "dental" });
+  return { ok: true };
+}
+
 async function addExternalSupply(form) {
   if (!isManager()) return;
   const data = new FormData(form);
   const supplierId = String(data.get("supplierId") || "");
+  const stock = Number(data.get("stock"));
   const row = {
     id: crypto.randomUUID(),
     itemName: String(data.get("itemName") || "").trim(),
@@ -2660,18 +2704,28 @@ async function addExternalSupply(form) {
     supplierId,
     supplierName: supplierById(supplierId)?.name || "",
     price: Number(data.get("price")) || 0,
-    stock: 0,
-    expiryDate: "",
+    stock: Number.isFinite(stock) && stock > 0 ? stock : 0,
+    expiryDate: String(data.get("expiryDate") || ""),
   };
-  if (!row.itemName) return;
+  if (!row.itemName || !Number.isFinite(stock) || stock < 0) return;
   const saved = await saveExternalSupply(row);
   if (saved.error) {
     notifyDbError(saved.error);
     return;
   }
+  const stored = { ...row, ...(saved.row || {}) };
+  if (saved.stockSkipped) {
+    stored.stock = 0;
+    stored.expiryDate = "";
+    alert(t("externalQtyPending"));
+  } else {
+    const synced = await syncExternalStockToWarehouse(stored);
+    if (!synced.ok) notifyDbError(synced.error);
+  }
   if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
-  state.externalSupplies.unshift(saved.row || row);
-  await recordActivity("external_add", row.itemName);
+  state.externalSupplies.unshift(stored);
+  await recordActivity("external_add", `${stored.itemName} — ${stored.stock}`);
+  form.reset();
   persist();
 }
 
@@ -2715,6 +2769,8 @@ async function saveExternalSupplyDetails(id) {
   if (Number(previousStock) !== storedStock || previousExpiry !== storedExpiry) {
     await recordActivity("external_update", `${item.itemName} — ${storedStock}${storedExpiry ? ` — ${storedExpiry}` : ""}`);
   }
+  const synced = await syncExternalStockToWarehouse(item);
+  if (!synced.ok) notifyDbError(synced.error);
   persist();
 }
 
@@ -2762,6 +2818,8 @@ async function saveEditedExternal(form) {
     return;
   }
   if (saved.row) Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate });
+  const synced = await syncExternalStockToWarehouse(item);
+  if (!synced.ok) notifyDbError(synced.error);
   await recordActivity("external_update", item.itemName);
   closeModal();
   persist();
@@ -2777,6 +2835,11 @@ async function removeExternalSupply(id) {
     return;
   }
   state.externalSupplies = state.externalSupplies.filter((row) => String(row.id) !== String(id));
+  const removed = await deleteSupply(item.id);
+  if (removed.error) notifyDbError(removed.error);
+  state.supplyItems = (state.supplyItems || []).filter(
+    (entry) => String(entry.sourceId) !== String(item.id) && String(entry.id) !== String(item.id)
+  );
   await recordActivity("external_delete", item.itemName);
   persist();
 }
