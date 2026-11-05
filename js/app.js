@@ -727,6 +727,16 @@ function itemNameKey(name) {
   return (name || "").trim().toLowerCase();
 }
 
+function catalogQuery(key) {
+  return (document.querySelector(`[data-catalog-search="${key}"]`)?.value || "").trim().toLowerCase();
+}
+
+function matchesCatalogName(name, key) {
+  const query = catalogQuery(key);
+  if (!query) return true;
+  return String(name || "").toLowerCase().includes(query);
+}
+
 function itemPrice(item) {
   return Number(item.price != null ? item.price : item.bestPrice) || 0;
 }
@@ -1012,8 +1022,8 @@ function supplyItemHeaders(includeStock) {
 function renderSupplyCategory() {
   const dentalTable = document.getElementById("table-dental");
   const emergencyTable = document.getElementById("table-emergency");
-  if (dentalTable) dentalTable.innerHTML = table(supplyItemHeaders(true), supplyRows(state.supplyItems.filter(isDental), true));
-  if (emergencyTable) emergencyTable.innerHTML = table(supplyItemHeaders(false), supplyRows(state.supplyItems.filter(isEmergency), false));
+  if (dentalTable) dentalTable.innerHTML = table(supplyItemHeaders(true), supplyRows(state.supplyItems.filter(isDental).filter((item) => matchesCatalogName(item.itemName, "dental")), true));
+  if (emergencyTable) emergencyTable.innerHTML = table(supplyItemHeaders(false), supplyRows(state.supplyItems.filter(isEmergency).filter((item) => matchesCatalogName(item.itemName, "emergency")), false));
 }
 
 function renderDashboardAlerts() {
@@ -1198,7 +1208,7 @@ async function disposeItem(id) {
 function renderWarehouse() {
   const box = document.getElementById("warehouse-table");
   if (!box) return;
-  const items = state.supplyItems.filter(isDental);
+  const items = state.supplyItems.filter(isDental).filter((item) => matchesCatalogName(item.itemName, "warehouse"));
   if (!canSeePrices()) {
     const available = items.filter((item) => {
       const stock = trackedStock(item);
@@ -2597,7 +2607,7 @@ function externalQtyStatus(item) {
 function renderExternalSupplies() {
   const panel = document.getElementById("external-supply-panel");
   if (!panel) return;
-  const items = state.externalSupplies || [];
+  const items = (state.externalSupplies || []).filter((item) => matchesCatalogName(item.itemName, "external"));
   const supplierOptions = `<option value="">${t("selectVendor")}</option>` + state.suppliers.map((supplier) => `<option value="${escapeAttr(supplier.id)}">${escapeAttr(supplier.name)}</option>`).join("");
   const form = isManager()
     ? `<div class="card"><h3>${t("addItem")}</h3>
@@ -2784,7 +2794,7 @@ function cleaningSupplierOptions(selected) {
 function renderCleaning() {
   const panel = document.getElementById("cleaning-panel");
   if (!panel) return;
-  const items = state.cleaningItems || [];
+  const items = (state.cleaningItems || []).filter((item) => matchesCatalogName(item.itemName, "cleaning"));
   const visible = isManager() ? items : items.filter((item) => Number(item.stock) > 0);
   const form = isManager()
     ? `<div class="card"><h3>${t("addItem")}</h3>
@@ -3232,6 +3242,16 @@ document.getElementById("page-archive").addEventListener("click", async (e) => {
 });
 
 document.getElementById("price-search").addEventListener("input", renderArchivePrices);
+document.querySelectorAll("[data-catalog-search]").forEach((input) => {
+  input.addEventListener("input", () => {
+    const key = input.dataset.catalogSearch;
+    if (key === "dental" || key === "emergency") {
+      if (canSeePrices()) renderSupplyCategory();
+    } else if (key === "warehouse") renderWarehouse();
+    else if (key === "external") renderExternalSupplies();
+    else if (key === "cleaning") renderCleaning();
+  });
+});
 document.getElementById("activity-account").addEventListener("change", renderActivityLog);
 document.getElementById("chart-vendor").addEventListener("change", () => {
   drawVendorChart(document.getElementById("chart-vendor").value);

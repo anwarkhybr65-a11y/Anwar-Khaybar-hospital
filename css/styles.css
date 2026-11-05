@@ -305,6 +305,7 @@ textarea { min-height: 84px; resize: vertical; }
   place-items: center;
   padding: 0 6px;
 }
+.product-search { max-width: 420px; margin-bottom: 12px; }
 .qty-saved {
   margin-top: 6px;
   color: #0f6b4c;
