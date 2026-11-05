@@ -239,6 +239,9 @@ const I18N = {
     externalSuppliesHint: "أصناف هذه الصفحة هي التي تظهر عند إنشاء طلب خارجي.",
     noExternalProducts: "لا توجد مستلزمات خارجية. أضفها من صفحة المستلزمات الخارجية.",
     internalRequests: "طلبات داخلية",
+    cleaningRequests: "طلبات النظافة",
+    noCleaningProducts: "لا توجد مستلزمات نظافة متوفرة في المستودع.",
+    cleaningRequestNeedSql: "نفّذ ملف sql/add_cleaning_requests.sql مرة واحدة في Supabase لتفعيل طلبات النظافة.",
     disposeRequest: "طلب إتلاف",
     returnRequest: "إعادة إلى المستودع",
     requestKind: "نوع الطلب",
@@ -489,6 +492,9 @@ const I18N = {
     externalSuppliesHint: "Items on this page are the ones available for an external request.",
     noExternalProducts: "There are no external supplies yet. Add them on the external supplies page.",
     internalRequests: "Internal requests",
+    cleaningRequests: "Cleaning requests",
+    noCleaningProducts: "No cleaning supplies are available in the warehouse.",
+    cleaningRequestNeedSql: "Run sql/add_cleaning_requests.sql once in Supabase to enable cleaning requests.",
     disposeRequest: "Disposal request",
     returnRequest: "Return to warehouse",
     requestKind: "Request type",
@@ -1343,14 +1349,14 @@ function renderWithdrawals() {
       (row) =>
         row.status === "accepted" &&
         row.clinicId === sessionClinic() &&
-        (row.kind === "internal" || row.kind === "external")
+        (row.kind === "internal" || row.kind === "external" || row.kind === "cleaning")
     );
     const rows = list.map(
       (row) => `<tr>
         <td>${escapeAttr(row.productName)}</td>
         <td>${escapeAttr((row.reviewedAt || row.createdAt || "").slice(0, 10))}</td>
         <td>${Number(row.quantity) || 0}</td>
-        <td>${t(row.kind === "external" ? "externalRequests" : "internalRequests")}</td>
+        <td>${requestKindLabel(row.kind)}</td>
       </tr>`
     );
     pages.innerHTML = `<div class="card table-wrap"><h3>${t("approvedWithdrawals")}</h3>${table([t("itemName"), t("date"), t("quantity"), t("requestKind")], rows)}</div>`;
@@ -2020,6 +2026,7 @@ function clinicRows(clinicId) {
 
 function requestKindLabel(kind) {
   if (kind === "external") return t("externalRequests");
+  if (kind === "cleaning") return t("cleaningRequests");
   if (kind === "dispose") return t("disposeRequest");
   if (kind === "return") return t("returnRequest");
   return t("internalRequests");
@@ -2191,6 +2198,11 @@ function requestChoices(kind) {
       max: "",
     }));
   }
+  if (kind === "cleaning") {
+    return (state.cleaningItems || [])
+      .filter((item) => Number(item.stock) > 0)
+      .map((item) => ({ value: item.id, label: item.itemName, max: "" }));
+  }
   return state.supplyItems
     .filter(isDental)
     .filter((item) => {
@@ -2232,13 +2244,18 @@ function renderRequests() {
   tabs.innerHTML = [
     ["external", "externalRequests"],
     ["internal", "internalRequests"],
+    ["cleaning", "cleaningRequests"],
     ["dispose", "disposeRequest"],
     ["return", "returnRequest"],
   ]
     .map(([kind, key]) => `<button class="subnav-btn ${requestTab === kind ? "active" : ""}" type="button" data-request-tab="${kind}">${t(key)}</button>`)
     .join("");
   const choices = isStaff() ? requestChoices(requestTab) : [];
-  const emptyText = requestTab === "external" ? t("noExternalProducts") : t("noRequestProducts");
+  const emptyText = requestTab === "external"
+    ? t("noExternalProducts")
+    : requestTab === "cleaning"
+      ? t("noCleaningProducts")
+      : t("noRequestProducts");
   const externalLink = requestTab === "external" && isManager()
     ? `<p><button class="btn btn-navy" type="button" data-open-page="external">${t("externalSupplies")}</button></p>`
     : "";
@@ -2353,6 +2370,11 @@ async function submitRequest(form) {
     if (!product) return;
     productId = product.id;
     productName = product.itemName;
+  } else if (requestTab === "cleaning") {
+    const product = (state.cleaningItems || []).find((item) => String(item.id) === String(itemId));
+    if (!product) return;
+    productId = product.id;
+    productName = product.itemName;
   } else {
     const product = state.supplyItems.find((item) => String(item.id) === String(itemId));
     if (!product) return;
@@ -2384,7 +2406,8 @@ async function submitRequest(form) {
   };
   const saved = await saveSupplyRequest(row);
   if (saved.error) {
-    notifyDbError(saved.error);
+    if (row.kind === "cleaning" && /check constraint|23514/i.test(saved.error)) alert(t("cleaningRequestNeedSql"));
+    else notifyDbError(saved.error);
     return;
   }
   state.requests.unshift(saved.row || row);

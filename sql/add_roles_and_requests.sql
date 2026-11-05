@@ -17,7 +17,7 @@ alter table public.app_users
 
 create table if not exists public.supply_requests (
   id uuid primary key default gen_random_uuid(),
-  kind text not null check (kind in ('external', 'internal', 'dispose', 'return')),
+  kind text not null check (kind in ('external', 'internal', 'dispose', 'return', 'cleaning')),
   clinic_id text not null default '',
   product_id text not null default '',
   product_name text not null default '',
