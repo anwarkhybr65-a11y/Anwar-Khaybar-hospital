@@ -90,6 +90,8 @@ const I18N = {
     stockQty: "الكمية في المستودع (علب)",
     boxes: "علب",
     saveStock: "حفظ الكمية",
+    warehouseExpirySaved: "تم حفظ تاريخ الصلاحية",
+    expiryNeedSql: "تاريخ الصلاحية لم يُحفظ. شغّل ملف sql/add_expiry_and_disposals.sql مرة واحدة ثم أعد المحاولة.",
     externalQtyPending: "لم تُحفظ الكمية وتاريخ الصلاحية. شغّل ملف sql/add_external_supply_qty.sql مرة واحدة في قاعدة البيانات ثم أعد الحفظ.",
     externalQtySaved: "تم حفظ الكمية في المستودع",
     lowStockTitle: "تنبيه: منتجات على وشك النفاد",
@@ -349,6 +351,8 @@ const I18N = {
     stockQty: "Warehouse quantity (boxes)",
     boxes: "boxes",
     saveStock: "Save quantity",
+    warehouseExpirySaved: "Expiry date saved",
+    expiryNeedSql: "The expiry date was not saved. Run sql/add_expiry_and_disposals.sql once, then try again.",
     externalQtyPending: "Quantity and expiry were not saved. Run sql/add_external_supply_qty.sql once in the database, then save again.",
     externalQtySaved: "Quantity saved in the warehouse",
     lowStockTitle: "Alert: items are running low",
@@ -1291,9 +1295,27 @@ async function disposeItem(id) {
   persist();
 }
 
+function warehouseDrafts() {
+  const drafts = new Map();
+  document.querySelectorAll("#warehouse-table [data-save-stock]").forEach((btn) => {
+    const row = btn.closest("tr");
+    if (!row) return;
+    const id = String(btn.dataset.saveStock);
+    const stock = row.querySelector("[data-stock-input]")?.value ?? "";
+    const shown = warehouseInputShown.get(id);
+    if (shown !== undefined && stock !== shown) warehouseStockDirty.set(id, stock);
+    drafts.set(id, {
+      expiry: row.querySelector("[data-expiry-input]")?.value || "",
+      damaged: Boolean(row.querySelector("[data-damaged-input]")?.checked),
+    });
+  });
+  return drafts;
+}
+
 function renderWarehouse() {
   const box = document.getElementById("warehouse-table");
   if (!box) return;
+  const drafts = warehouseDrafts();
   const items = state.supplyItems.filter(isDental).filter((item) => matchesCatalogName(item.itemName, "warehouse"));
   if (!canSeePrices()) {
     const available = items.filter((item) => {
@@ -1314,20 +1336,31 @@ function renderWarehouse() {
   }
   const rows = items.map((item) => {
     const stock = trackedStock(item);
+    const draft = drafts.get(String(item.id));
+    const expiryValue = draft ? draft.expiry : item.expiryDate || "";
+    const damaged = draft ? draft.damaged : item.damaged === true;
+    const savedStock = stock == null ? "" : String(stock);
+    if (warehouseStockDirty.get(String(item.id)) === savedStock) warehouseStockDirty.delete(String(item.id));
+    const stockValue = warehouseStockDirty.has(String(item.id)) ? warehouseStockDirty.get(String(item.id)) : savedStock;
+    warehouseInputShown.set(String(item.id), String(stockValue));
+    const notice = warehouseNotice && String(warehouseNotice.id) === String(item.id)
+      ? `<div class="qty-saved">${escapeAttr(warehouseNotice.text)}</div>`
+      : "";
     return `<tr>
       <td>${item.itemName}</td>
       <td>${item.unit}</td>
       <td>${item.type}</td>
       <td class="${isBelowStockAlert(stock, item.minStock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
       <td>${alertThreshold(item.minStock)}</td>
-      <td><input data-expiry-input type="date" value="${item.expiryDate || ""}" /></td>
-      <td><input data-damaged-input type="checkbox" ${item.damaged ? "checked" : ""} /></td>
+      <td><input data-expiry-input type="date" value="${escapeAttr(expiryValue)}" /></td>
+      <td><input data-damaged-input type="checkbox" ${damaged ? "checked" : ""} /></td>
       <td>
-        <input data-stock-input="${item.id}" type="number" min="0" step="1" value="${stock == null ? "" : stock}" style="max-width:110px" />
+        <input data-stock-input="${item.id}" type="number" min="0" step="1" value="${escapeAttr(stockValue)}" style="max-width:110px" />
       </td>
       <td>
         <button class="btn btn-sm btn-primary" type="button" data-save-stock="${escapeAttr(item.id)}">${t("saveStock")}</button>
         <button class="btn btn-sm btn-danger" type="button" data-del-item="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
+        ${notice}
       </td>
     </tr>`;
   });
@@ -2815,6 +2848,10 @@ function userAdminHtml() {
 }
 
 let externalQtyNotice = null;
+let warehouseNotice = null;
+const warehouseSaveChain = new Map();
+const warehouseInputShown = new Map();
+const warehouseStockDirty = new Map();
 
 function externalQtyStatus(item) {
   if (!externalQtyNotice || String(externalQtyNotice.id) !== String(item.id)) return "";
@@ -3553,29 +3590,76 @@ document.getElementById("chart-vendor").addEventListener("change", () => {
   drawCompareChart();
 });
 
-document.getElementById("page-warehouse").addEventListener("click", async (e) => {
-  const btn = e.target.closest("[data-save-stock]");
-  if (!btn) return;
-  const item = state.supplyItems.find((row) => String(row.id) === String(btn.dataset.saveStock));
-  const input = btn.closest("tr")?.querySelector("[data-stock-input]");
-  if (!item || !input) return;
-  const value = Number(input.value);
-  if (!Number.isFinite(value) || value < 0) return;
-  const expiryInput = btn.closest("tr")?.querySelector("[data-expiry-input]");
-  const damagedInput = btn.closest("tr")?.querySelector("[data-damaged-input]");
-  item.stock = value;
-  item.expiryDate = expiryInput?.value || "";
-  item.damaged = Boolean(damagedInput?.checked);
+function warehouseRowValues(row, includeStock) {
+  const stockText = row.querySelector("[data-stock-input]")?.value ?? "";
+  let stock;
+  if (includeStock && stockText !== "") {
+    stock = Number(stockText);
+    if (!Number.isFinite(stock) || stock < 0) return null;
+  }
+  return {
+    stock,
+    expiry: row.querySelector("[data-expiry-input]")?.value || "",
+    damaged: Boolean(row.querySelector("[data-damaged-input]")?.checked),
+  };
+}
+
+function queueWarehouseSave(row, includeStock) {
+  const button = row.querySelector("[data-save-stock]");
+  const item = state.supplyItems.find((entry) => String(entry.id) === String(button?.dataset.saveStock));
+  const values = warehouseRowValues(row, includeStock);
+  if (!item || !values) return;
+  const previous = warehouseSaveChain.get(item.id) || Promise.resolve();
+  const run = previous.then(() => writeWarehouseRow(item, values));
+  warehouseSaveChain.set(item.id, run.catch(() => {}));
+}
+
+async function writeWarehouseRow(item, values) {
+  const previous = {
+    stock: item.stock,
+    expiryDate: item.expiryDate || "",
+    damaged: item.damaged === true,
+  };
+  if (values.stock !== undefined) item.stock = values.stock;
+  item.expiryDate = values.expiry;
+  item.damaged = values.damaged;
+  if (item.expiryDate === previous.expiryDate && item.damaged === previous.damaged && (values.stock === undefined || item.stock === previous.stock)) return;
   item.updatedAt = todayISO();
   const result = await updateSupply(item, state.suppliers);
   if (result.error || !result.row) {
+    item.stock = previous.stock;
+    item.expiryDate = previous.expiryDate;
+    item.damaged = previous.damaged;
     notifyDbError(result.error);
     return;
   }
   applySavedSupply(item, result.row);
-  if (item.stock == null) item.stock = value;
-  await recordActivity("stock_save", `${item.itemName} — ${item.stock}`);
+  if (values.stock !== undefined && item.stock == null) item.stock = values.stock;
+  if (values.expiry && result.row.expiryDate === undefined) {
+    item.expiryDate = previous.expiryDate;
+    item.damaged = previous.damaged;
+    alert(t("expiryNeedSql"));
+    persist();
+    return;
+  }
+  warehouseNotice = { id: item.id, text: t("warehouseExpirySaved") };
+  if (values.stock !== undefined) warehouseStockDirty.delete(String(item.id));
+  await recordActivity("stock_save", `${item.itemName} — ${item.expiryDate || t("noExpiry")}`);
   persist();
+}
+
+document.getElementById("page-warehouse").addEventListener("change", (e) => {
+  const field = e.target.closest("[data-expiry-input], [data-damaged-input]");
+  if (!field) return;
+  const row = field.closest("tr");
+  if (row) queueWarehouseSave(row, false);
+});
+
+document.getElementById("page-warehouse").addEventListener("click", (e) => {
+  const btn = e.target.closest("[data-save-stock]");
+  if (!btn) return;
+  const row = btn.closest("tr");
+  if (row) queueWarehouseSave(row, true);
 });
 
 document.querySelectorAll("#page-supplies .subnav-btn").forEach((btn) => {
