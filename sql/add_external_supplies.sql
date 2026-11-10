@@ -9,6 +9,7 @@ create table if not exists public.external_supplies (
   supplier_id text not null default '',
   supplier_name text not null default '',
   price numeric not null default 0,
+  actual_price numeric,
   stock integer not null default 0,
   expiry_date date,
   created_at timestamptz not null default now()

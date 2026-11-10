@@ -191,6 +191,9 @@ function missingTable(error) {
 }
 
 let dentalExpiryReady = null;
+let dentalMinStockReady = null;
+let dentalActualReady = null;
+let emergencyActualReady = null;
 
 export async function ensureDentalExpiryColumns() {
   if (dentalExpiryReady != null) return dentalExpiryReady;
@@ -201,6 +204,33 @@ export async function ensureDentalExpiryColumns() {
   }
   if (missingTable(error) || /column|schema cache/i.test(error.message || "")) dentalExpiryReady = false;
   return dentalExpiryReady === true;
+}
+
+export async function ensureDentalMinStockColumn() {
+  if (dentalMinStockReady != null) return dentalMinStockReady;
+  const { error } = await supabase.from("dental_warehouse").select("min_stock").limit(1);
+  dentalMinStockReady = !error;
+  return dentalMinStockReady === true;
+}
+
+function storedActualPrice(item) {
+  if (item.actualPrice == null || item.actualPrice === "") return Number(item.price) || 0;
+  const value = Number(item.actualPrice);
+  return Number.isFinite(value) && value >= 0 ? value : Number(item.price) || 0;
+}
+
+export async function ensureDentalActualPriceColumn() {
+  if (dentalActualReady != null) return dentalActualReady;
+  const { error } = await supabase.from("dental_warehouse").select("actual_price").limit(1);
+  dentalActualReady = !error;
+  return dentalActualReady === true;
+}
+
+export async function ensureEmergencyActualPriceColumn() {
+  if (emergencyActualReady != null) return emergencyActualReady;
+  const { error } = await supabase.from("emergency_supplies").select("actual_price").limit(1);
+  emergencyActualReady = !error;
+  return emergencyActualReady === true;
 }
 
 function dentalPayload(item, suppliers = []) {
@@ -219,6 +249,11 @@ function dentalPayload(item, suppliers = []) {
     payload.expiry_date = item.expiryDate || null;
     payload.damaged = item.damaged === true;
   }
+  if (dentalMinStockReady) {
+    const minStock = Math.floor(Number(item.minStock));
+    payload.min_stock = Number.isFinite(minStock) && minStock >= 0 ? minStock : 6;
+  }
+  if (dentalActualReady) payload.actual_price = storedActualPrice(item);
   return payload;
 }
 
@@ -226,6 +261,9 @@ function emergencyPayload(item, suppliers = []) {
   const vendor = suppliers.find((s) => s.id === item.supplierId);
   const payload = dentalPayload(item, suppliers);
   delete payload.stock;
+  delete payload.min_stock;
+  delete payload.actual_price;
+  if (emergencyActualReady) payload.actual_price = storedActualPrice(item);
   payload.supplier_name = vendor?.name || item.supplierName || "";
   return payload;
 }
@@ -241,7 +279,9 @@ export function mapDentalRow(row) {
     supplierId: row.supplier_id || "",
     supplierName: row.supplier_name || "",
     price: Number(row.price) || 0,
+    actualPrice: "actual_price" in row && row.actual_price != null && row.actual_price !== "" ? Number(row.actual_price) : undefined,
     stock: row.stock == null || row.stock === "" ? null : Number(row.stock),
+    minStock: "min_stock" in row ? Number(row.min_stock) || 0 : undefined,
     expiryDate: "expiry_date" in row ? (row.expiry_date ? dateOnly(row.expiry_date) : "") : undefined,
     damaged: "damaged" in row ? row.damaged === true : undefined,
     updatedAt: dateOnly(row.updated_at || row.created_at),
@@ -348,29 +388,45 @@ export async function fetchSupplies() {
 }
 
 export async function insertSupply(item, suppliers) {
-  if (item?.category !== "emergency") await ensureDentalExpiryColumns();
+  let minStockSkipped = false;
+  let actualPriceSkipped = false;
+  if (item?.category !== "emergency") {
+    await ensureDentalExpiryColumns();
+    minStockSkipped = !(await ensureDentalMinStockColumn());
+    actualPriceSkipped = !(await ensureDentalActualPriceColumn());
+  } else {
+    actualPriceSkipped = !(await ensureEmergencyActualPriceColumn());
+  }
   const table = item?.category === "emergency" ? "emergency_supplies" : "dental_warehouse";
   const mapFn = item?.category === "emergency" ? mapEmergencyRow : mapDentalRow;
   const payloadFn = item?.category === "emergency" ? emergencyPayload : dentalPayload;
   const saved = await saveInventoryItem(table, item, suppliers, mapFn, payloadFn);
-  if (!saved.missing) return { row: saved.row, error: saved.error };
+  if (!saved.missing) return { row: saved.row, error: saved.error, minStockSkipped, actualPriceSkipped };
   const base = supplyPayload(item, suppliers);
   const { data, error } = await insertWithFallback("supplies", [base]);
-  if (!data) return { row: null, error: errorText(error) };
-  return { row: mapSupplyRow(data), error: null };
+  if (!data) return { row: null, error: errorText(error), minStockSkipped: true, actualPriceSkipped: true };
+  return { row: mapSupplyRow(data), error: null, minStockSkipped: true, actualPriceSkipped: true };
 }
 
 export async function updateSupply(item, suppliers) {
-  if (item?.category !== "emergency") await ensureDentalExpiryColumns();
+  let minStockSkipped = false;
+  let actualPriceSkipped = false;
+  if (item?.category !== "emergency") {
+    await ensureDentalExpiryColumns();
+    minStockSkipped = !(await ensureDentalMinStockColumn());
+    actualPriceSkipped = !(await ensureDentalActualPriceColumn());
+  } else {
+    actualPriceSkipped = !(await ensureEmergencyActualPriceColumn());
+  }
   const table = item?.category === "emergency" ? "emergency_supplies" : "dental_warehouse";
   const mapFn = item?.category === "emergency" ? mapEmergencyRow : mapDentalRow;
   const payloadFn = item?.category === "emergency" ? emergencyPayload : dentalPayload;
   const saved = await saveInventoryItem(table, item, suppliers, mapFn, payloadFn);
-  if (!saved.missing) return { row: saved.row, error: saved.error };
-  if (!isUuid(item.id)) return { row: { ...item }, error: null };
+  if (!saved.missing) return { row: saved.row, error: saved.error, minStockSkipped, actualPriceSkipped };
+  if (!isUuid(item.id)) return { row: { ...item }, error: null, minStockSkipped: true, actualPriceSkipped: true };
   const { data, error } = await supabase.from("supplies").update(supplyPayload(item, suppliers)).eq("id", item.id).select().single();
-  if (error) return { row: null, error: error.message };
-  return { row: mapSupplyRow(data), error: null };
+  if (error) return { row: null, error: error.message, minStockSkipped: true, actualPriceSkipped: true };
+  return { row: mapSupplyRow(data), error: null, minStockSkipped: true, actualPriceSkipped: true };
 }
 
 async function deleteFromTable(table, id) {
@@ -734,6 +790,7 @@ export function mapClinicStock(row) {
     unit: row.unit || "",
     quantity: Number(row.quantity) || 0,
     expiryDate: row.expiry_date ? dateOnly(row.expiry_date) : "",
+    minStock: "min_stock" in row ? Number(row.min_stock) || 0 : undefined,
   };
 }
 
@@ -756,7 +813,7 @@ function supplyRequestPayload(row) {
 }
 
 function clinicStockPayload(row) {
-  return {
+  const payload = {
     clinic_id: row.clinicId || "",
     product_id: String(row.productId || ""),
     product_name: row.productName || "",
@@ -765,6 +822,11 @@ function clinicStockPayload(row) {
     expiry_date: row.expiryDate || null,
     updated_at: new Date().toISOString(),
   };
+  if (clinicMinStockReady && row.minStock != null && row.minStock !== "") {
+    const minStock = Math.floor(Number(row.minStock));
+    payload.min_stock = Number.isFinite(minStock) && minStock >= 0 ? minStock : 0;
+  }
+  return payload;
 }
 
 async function saveUuidRow(table, row, payload, mapFn) {
@@ -790,8 +852,19 @@ export async function fetchClinicInventory() {
   return fetchOptional("clinic_inventory", mapClinicStock, { column: "product_name", ascending: true });
 }
 
+let clinicMinStockReady = null;
+
+export async function ensureClinicMinStockColumn() {
+  if (clinicMinStockReady != null) return clinicMinStockReady;
+  const { error } = await supabase.from("clinic_inventory").select("min_stock").limit(1);
+  clinicMinStockReady = !error;
+  return clinicMinStockReady === true;
+}
+
 export async function saveClinicStock(row) {
-  return saveUuidRow("clinic_inventory", row, clinicStockPayload(row), mapClinicStock);
+  const ready = await ensureClinicMinStockColumn();
+  const saved = await saveUuidRow("clinic_inventory", row, clinicStockPayload(row), mapClinicStock);
+  return { ...saved, minStockSkipped: !ready };
 }
 
 export async function deleteClinicStock(id) {
@@ -811,6 +884,7 @@ export function mapExternalSupply(row) {
     supplierId: row.supplier_id || "",
     supplierName: row.supplier_name || "",
     price: Number(row.price) || 0,
+    actualPrice: "actual_price" in row && row.actual_price != null && row.actual_price !== "" ? Number(row.actual_price) : undefined,
     stock: Number(row.stock) || 0,
     expiryDate: row.expiry_date ? String(row.expiry_date).slice(0, 10) : "",
   };
@@ -824,6 +898,7 @@ function externalSupplyPayload(row) {
     supplier_id: String(row.supplierId || ""),
     supplier_name: row.supplierName || "",
     price: Number(row.price) || 0,
+    actual_price: storedActualPrice(row),
     stock: Number(row.stock) || 0,
     expiry_date: row.expiryDate || null,
   };
@@ -833,17 +908,29 @@ export async function fetchExternalSupplies() {
   return fetchOptional("external_supplies", mapExternalSupply, { column: "item_name", ascending: true });
 }
 
+let externalActualReady = null;
+
+export async function ensureExternalActualPriceColumn() {
+  if (externalActualReady != null) return externalActualReady;
+  const { error } = await supabase.from("external_supplies").select("actual_price").limit(1);
+  externalActualReady = !error;
+  return externalActualReady === true;
+}
+
 export async function saveExternalSupply(row) {
+  const ready = await ensureExternalActualPriceColumn();
   const payload = externalSupplyPayload(row);
+  if (!ready) delete payload.actual_price;
   let saved = await saveUuidRow("external_supplies", row, payload, mapExternalSupply);
   const missingQtyColumns = saved.error && /stock|expiry_date/.test(saved.error) && /column|schema cache/i.test(saved.error);
-  if (!missingQtyColumns) return saved;
+  if (!missingQtyColumns) return { ...saved, actualPriceSkipped: !ready };
   const basic = { ...payload };
   delete basic.stock;
   delete basic.expiry_date;
+  delete basic.actual_price;
   saved = await saveUuidRow("external_supplies", row, basic, mapExternalSupply);
   if (!saved.error) saved.stockSkipped = true;
-  return saved;
+  return { ...saved, actualPriceSkipped: true };
 }
 
 export async function deleteExternalSupply(id) {
@@ -896,6 +983,7 @@ export function mapCleaningItem(row) {
     supplierId: row.supplier_id || "",
     supplierName: row.supplier_name || "",
     price: Number(row.price) || 0,
+    actualPrice: "actual_price" in row && row.actual_price != null && row.actual_price !== "" ? Number(row.actual_price) : undefined,
     stock: Number(row.stock) || 0,
     minStock: Number(row.min_stock) || 0,
   };
@@ -909,6 +997,7 @@ function cleaningItemPayload(row) {
     supplier_id: String(row.supplierId || ""),
     supplier_name: row.supplierName || "",
     price: Number(row.price) || 0,
+    actual_price: storedActualPrice(row),
     stock: Number(row.stock) || 0,
     min_stock: Number(row.minStock) || 0,
     updated_at: new Date().toISOString(),
@@ -944,8 +1033,21 @@ export async function fetchCleaningInventory() {
   return fetchOptional("cleaning_inventory", mapCleaningItem, { column: "item_name", ascending: true });
 }
 
+let cleaningActualReady = null;
+
+async function ensureCleaningActualPriceColumn() {
+  if (cleaningActualReady != null) return cleaningActualReady;
+  const { error } = await supabase.from("cleaning_inventory").select("actual_price").limit(1);
+  cleaningActualReady = !error;
+  return cleaningActualReady === true;
+}
+
 export async function saveCleaningItem(row) {
-  return saveUuidRow("cleaning_inventory", row, cleaningItemPayload(row), mapCleaningItem);
+  const ready = await ensureCleaningActualPriceColumn();
+  const payload = cleaningItemPayload(row);
+  if (!ready) delete payload.actual_price;
+  const saved = await saveUuidRow("cleaning_inventory", row, payload, mapCleaningItem);
+  return { ...saved, actualPriceSkipped: !ready };
 }
 
 export async function deleteCleaningItem(id) {

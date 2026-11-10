@@ -26,7 +26,9 @@ create table if not exists public.dental_warehouse (
   supplier_id text,
   supplier_name text,
   price numeric not null default 0,
+  actual_price numeric,
   stock numeric,
+  min_stock integer not null default 6,
   expiry_date date,
   damaged boolean not null default false,
   source_id text,
@@ -43,6 +45,7 @@ create table if not exists public.emergency_supplies (
   supplier_id text,
   supplier_name text,
   price numeric not null default 0,
+  actual_price numeric,
   source_id text,
   updated_at timestamptz,
   created_at timestamptz not null default now()

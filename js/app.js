@@ -35,7 +35,6 @@ import {
 
 const KEY = "anwar-khaybar-procurement";
 
-const LOW_STOCK_SETTING = "low_stock_limit";
 const DEFAULT_LOW_STOCK = 6;
 
 const CLINICS = [
@@ -81,6 +80,7 @@ const I18N = {
     cleaningWithdrawalsHint: "تسجيل سحب مستلزمات النظافة باسم الطالب، ويُخصم من رصيد المستودع.",
     cleaningAvailable: "الأصناف المتوفرة",
     minStock: "الحد الأدنى للتنبيه",
+    minStockNeedSql: "شغّل ملف sql/add_item_min_stock.sql مرة واحدة حتى يُحفظ حد التنبيه لكل صنف.",
     department: "اسم الطالب",
     cleaningNeedSql: "نفّذ ملف sql/add_cleaning_supplies.sql مرة واحدة في Supabase لتفعيل مستلزمات النظافة.",
     cleaningLowCard: "مواد النظافة قاربت على النفاد",
@@ -95,10 +95,7 @@ const I18N = {
     lowStockTitle: "تنبيه: منتجات على وشك النفاد",
     lowStockItem: "الكمية المتبقية من {name} هي {qty} علب، والمنتج على وشك النفاد.",
     lowStockCard: "قاربت على النفاد",
-    lowStockCardAlert: "تنبيه: يوجد {count} من الأصناف بكمية أقل من {limit} في مستودع الأسنان.",
-    lowStockLimitLabel: "يظهر تنبيه النفاد إذا قلّت الكمية عن",
-    lowStockLimitHint: "يسري على مستودع الأسنان ومخزون العيادات.",
-    lowStockLimitSave: "حفظ الحد",
+    lowStockCardAlert: "تنبيه: يوجد {count} من الأصناف وصلت إلى حد النفاد المحدد لها.",
     lowStockCardClear: "لا توجد مستلزمات قاربت على النفاد.",
     expiryCard: "قاربت صلاحيتها على الانتهاء",
     expiryCardAlert: "تحذير: يوجد {count} من الأصناف قاربت صلاحيتها أو تالفة.",
@@ -157,7 +154,6 @@ const I18N = {
     actCleaningWithdraw: "سحب مستلزم نظافة",
     actCleaningWithdrawDelete: "حذف مسحوب نظافة",
     actClinicNames: "تغيير أسماء العيادات",
-    actLowStockLimit: "تغيير حد تنبيه النفاد",
     actClinicStockAdd: "إضافة صنف لمخزون العيادة",
     actUserCreate: "إنشاء حساب",
     actUserBan: "حظر حساب",
@@ -189,6 +185,9 @@ const I18N = {
     itemType: "النوع",
     vendor: "المورد",
     price: "السعر",
+    actualPrice: "السعر الفعلي",
+    actualPriceHint: "يتعبأ تلقائياً من السعر. غيّره إذا كان على الصنف تخفيض من المورد.",
+    actualPriceNeedSql: "شغّل ملف sql/add_actual_price.sql مرة واحدة حتى يُحفظ السعر الفعلي.",
     bestPrices: "أفضل الأسعار",
     bestVendor: "أفضل مورد",
     lastUpdate: "تاريخ آخر تحديث",
@@ -339,6 +338,7 @@ const I18N = {
     cleaningWithdrawalsHint: "Record cleaning supplies issued to a requester. The warehouse balance is reduced automatically.",
     cleaningAvailable: "Available items",
     minStock: "Low-stock threshold",
+    minStockNeedSql: "Run sql/add_item_min_stock.sql once so each item can keep its own alert threshold.",
     department: "Requester name",
     cleaningNeedSql: "Run sql/add_cleaning_supplies.sql once in Supabase to enable cleaning supplies.",
     cleaningLowCard: "Cleaning supplies are running low",
@@ -353,10 +353,7 @@ const I18N = {
     lowStockTitle: "Alert: items are running low",
     lowStockItem: "{name} has {qty} boxes left and is about to run out.",
     lowStockCard: "Running low",
-    lowStockCardAlert: "Alert: {count} items have fewer than {limit} in the dental warehouse.",
-    lowStockLimitLabel: "Show the low-stock alert when the quantity is below",
-    lowStockLimitHint: "Applies to the dental warehouse and clinic inventory.",
-    lowStockLimitSave: "Save limit",
+    lowStockCardAlert: "Alert: {count} items have reached their own low-stock limit.",
     lowStockCardClear: "No supplies are running low.",
     expiryCard: "Nearing expiry",
     expiryCardAlert: "Warning: {count} items are near expiry or damaged.",
@@ -415,7 +412,6 @@ const I18N = {
     actCleaningWithdraw: "Withdraw cleaning item",
     actCleaningWithdrawDelete: "Delete cleaning withdrawal",
     actClinicNames: "Change clinic names",
-    actLowStockLimit: "Change the low-stock alert limit",
     actClinicStockAdd: "Add a clinic inventory item",
     actUserCreate: "Create account",
     actUserBan: "Ban account",
@@ -447,6 +443,9 @@ const I18N = {
     itemType: "Type",
     vendor: "Supplier",
     price: "Price",
+    actualPrice: "Actual price",
+    actualPriceHint: "Filled from the price. Change it when the supplier gives a discount.",
+    actualPriceNeedSql: "Run sql/add_actual_price.sql once so the actual price can be saved.",
     bestPrices: "Best prices",
     bestVendor: "Best supplier",
     lastUpdate: "Last update",
@@ -602,7 +601,6 @@ function seed() {
     deletedArchivePriceKeys: [],
     disposals: [],
     clinicNames: {},
-    lowStockLimit: DEFAULT_LOW_STOCK,
     requests: [],
     clinicStock: [],
     externalSupplies: [],
@@ -767,6 +765,39 @@ function itemPrice(item) {
   return Number(item.price != null ? item.price : item.bestPrice) || 0;
 }
 
+function paidPrice(item) {
+  if (!item) return 0;
+  if (item.actualPrice == null || item.actualPrice === "") return itemPrice(item);
+  const value = Number(item.actualPrice);
+  return Number.isFinite(value) && value >= 0 ? value : itemPrice(item);
+}
+
+function readPaidPrice(actual, list) {
+  const listPrice = Number(list) || 0;
+  if (actual == null || String(actual).trim() === "") return listPrice;
+  const value = Number(actual);
+  return Number.isFinite(value) && value >= 0 ? value : listPrice;
+}
+
+function bindActualPriceFields(root = document) {
+  root.querySelectorAll("[data-actual-price]").forEach((actual) => {
+    if (actual.dataset.bound) return;
+    const price = actual.closest("form")?.querySelector("[data-list-price]");
+    if (!price) return;
+    actual.dataset.bound = "1";
+    let custom = actual.value !== "" && actual.value !== price.value;
+    price.addEventListener("input", () => {
+      if (!custom) actual.value = price.value;
+    });
+    actual.addEventListener("input", () => {
+      custom = actual.value !== price.value;
+    });
+    actual.closest("form")?.addEventListener("reset", () => {
+      custom = false;
+    });
+  });
+}
+
 function isEmergency(item) {
   return item?.category === "emergency";
 }
@@ -781,25 +812,21 @@ function trackedStock(item) {
   return Number.isFinite(value) ? value : null;
 }
 
-function readLowStockLimit(raw) {
-  const value = Math.floor(Number(raw));
-  return Number.isFinite(value) && value >= 1 ? value : DEFAULT_LOW_STOCK;
+function alertThreshold(value) {
+  const number = Math.floor(Number(value));
+  return Number.isFinite(number) && number >= 0 ? number : DEFAULT_LOW_STOCK;
 }
 
-function lowStockLimit() {
-  return readLowStockLimit(state.lowStockLimit);
-}
-
-function isBelowStockAlert(quantity) {
+function isBelowStockAlert(quantity, limit) {
   if (quantity == null || quantity === "") return false;
   const value = Number(quantity);
-  return Number.isFinite(value) && value < lowStockLimit();
+  return Number.isFinite(value) && value <= alertThreshold(limit);
 }
 
 function lowStockItems() {
   return state.supplyItems.filter((item) => {
     if (!isDental(item)) return false;
-    return isBelowStockAlert(trackedStock(item));
+    return isBelowStockAlert(trackedStock(item), item.minStock);
   });
 }
 
@@ -867,7 +894,9 @@ function disposalReasonLabel(reason) {
 function applySavedSupply(item, row) {
   const expiryDate = row.expiryDate === undefined ? item.expiryDate || "" : row.expiryDate || "";
   const damaged = row.damaged === undefined ? item.damaged === true : row.damaged === true;
-  Object.assign(item, row, { expiryDate, damaged });
+  const minStock = row.minStock === undefined ? item.minStock : row.minStock;
+  const actualPrice = row.actualPrice === undefined ? item.actualPrice : row.actualPrice;
+  Object.assign(item, row, { expiryDate, damaged, minStock, actualPrice });
 }
 
 function bestOffer(name, item) {
@@ -1041,7 +1070,7 @@ function supplyRows(items, includeStock) {
     const best = bestOffer(item.itemName, item);
     const isBest = best && best.id === item.id;
     const stock = trackedStock(item);
-    const stockCell = includeStock ? `<td class="${isBelowStockAlert(stock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>` : "";
+    const stockCell = includeStock ? `<td class="${isBelowStockAlert(stock, item.minStock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td><td>${alertThreshold(item.minStock)}</td>` : "";
     const expiryCell = includeStock ? `<td>${item.expiryDate || t("noExpiry")}</td><td>${item.damaged ? `<span class="badge badge-danger">${t("damaged")}</span>` : t("none")}</td>` : "";
     return `<tr>
       <td>${item.itemName}</td>
@@ -1049,6 +1078,7 @@ function supplyRows(items, includeStock) {
       <td>${item.type}</td>
       <td>${supplierById(item.supplierId)?.name || ""}</td>
       <td>${itemPrice(item)} ${t("currency")}${isBest ? ` <span class="badge badge-best">${t("cheapest")}</span>` : ""}</td>
+      <td>${paidPrice(item)} ${t("currency")}</td>
       <td>${best ? itemPrice(best) + " " + t("currency") : ""}</td>
       <td>${best ? supplierById(best.supplierId)?.name || "" : ""}</td>
       ${stockCell}
@@ -1063,8 +1093,8 @@ function supplyRows(items, includeStock) {
 }
 
 function supplyItemHeaders(includeStock) {
-  const headers = [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("bestPrices"), t("bestVendor")];
-  if (includeStock) headers.push(t("stockQty"), t("expiryDate"), t("damaged"));
+  const headers = [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("actualPrice"), t("bestPrices"), t("bestVendor")];
+  if (includeStock) headers.push(t("stockQty"), t("minStock"), t("expiryDate"), t("damaged"));
   headers.push(t("lastUpdate"), "");
   return headers;
 }
@@ -1091,9 +1121,7 @@ function renderDashboardAlerts() {
   const low = lowStockItems().slice().sort((a, b) => trackedStock(a) - trackedStock(b));
   const expiring = expiryItems();
   const cleaningLow = lowCleaningItems();
-  const stockAlert = low.length ? t("lowStockCardAlert").replace("{count}", low.length).replace("{limit}", lowStockLimit()) : t("lowStockCardClear");
-  const limitInput = document.getElementById("low-stock-limit");
-  if (limitInput && document.activeElement !== limitInput) limitInput.value = String(lowStockLimit());
+  const stockAlert = low.length ? t("lowStockCardAlert").replace("{count}", low.length) : t("lowStockCardClear");
   const expiryAlert = expiring.length ? t("expiryCardAlert").replace("{count}", expiring.length) : t("expiryCardClear");
   const cleaningAlert = cleaningLow.length ? t("cleaningLowAlert").replace("{count}", cleaningLow.length) : t("cleaningLowClear");
   cards.innerHTML = `
@@ -1126,7 +1154,7 @@ function renderDashboardAlerts() {
     detail.innerHTML = `
       <div class="dash-detail-head"><h3>${t("lowStockTitle")}</h3></div>
       ${table(
-        [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("stockQty"), t("lowStockTitle")],
+        [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("stockQty"), t("minStock"), t("lowStockTitle")],
         low.map((item) => {
           const qty = trackedStock(item);
           return `<tr>
@@ -1135,6 +1163,7 @@ function renderDashboardAlerts() {
             <td>${item.type || ""}</td>
             <td>${supplierById(item.supplierId)?.name || item.supplierName || ""}</td>
             <td class="stock-low">${qty} ${t("boxes")}</td>
+            <td>${alertThreshold(item.minStock)}</td>
             <td>${t("lowStockItem").replace("{name}", item.itemName).replace("{qty}", qty)}</td>
           </tr>`;
         })
@@ -1238,7 +1267,7 @@ async function disposeItem(id) {
     type: item.type,
     supplierName: supplierById(item.supplierId)?.name || item.supplierName || "",
     quantity: qty,
-    unitPrice: itemPrice(item),
+    unitPrice: paidPrice(item),
     reason,
     expiryDate: item.expiryDate || "",
     disposedAt: todayISO(),
@@ -1284,7 +1313,8 @@ function renderWarehouse() {
       <td>${item.itemName}</td>
       <td>${item.unit}</td>
       <td>${item.type}</td>
-      <td class="${isBelowStockAlert(stock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
+      <td class="${isBelowStockAlert(stock, item.minStock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
+      <td>${alertThreshold(item.minStock)}</td>
       <td><input data-expiry-input type="date" value="${item.expiryDate || ""}" /></td>
       <td><input data-damaged-input type="checkbox" ${item.damaged ? "checked" : ""} /></td>
       <td>
@@ -1296,7 +1326,7 @@ function renderWarehouse() {
       </td>
     </tr>`;
   });
-  box.innerHTML = `<h3>${t("warehouse")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("expiryDate"), t("damaged"), t("saveStock"), ""], rows)}`;
+  box.innerHTML = `<h3>${t("warehouse")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("minStock"), t("expiryDate"), t("damaged"), t("saveStock"), ""], rows)}`;
 }
 
 function renderPriceDiffs() {
@@ -1595,7 +1625,7 @@ function bindWithdrawForms() {
         date: data.get("date"),
         quantity: Number(data.get("quantity")),
         requester: data.get("requester").trim(),
-        unitPrice: product ? itemPrice(product) : 0,
+        unitPrice: product ? paidPrice(product) : 0,
       };
       if (product && isDental(product)) {
         const available = trackedStock(product);
@@ -1809,6 +1839,7 @@ function exportReportPdf(kind, label) {
 function openModal(html) {
   document.getElementById("modal-body").innerHTML = html;
   document.getElementById("modal").classList.add("open");
+  bindActualPriceFields(document.getElementById("modal"));
 }
 
 function closeModal() {
@@ -1853,8 +1884,10 @@ function openEditItem(itemId) {
       <div><label>${t("unitSize")}</label><input id="ei-unit" value="${escapeAttr(item.unit)}" required /></div>
       <div><label>${t("itemType")}</label><input id="ei-type" value="${escapeAttr(item.type)}" required /></div>
       <div><label>${t("vendor")}</label><select id="ei-supplier" required>${sOpts}</select></div>
-      <div><label>${t("price")}</label><input id="ei-price" type="number" min="0" step="0.01" value="${itemPrice(item)}" required /></div>
+      <div><label>${t("price")}</label><input id="ei-price" data-list-price type="number" min="0" step="0.01" value="${itemPrice(item)}" required /></div>
+      <div><label>${t("actualPrice")}</label><input id="ei-actual-price" data-actual-price type="number" min="0" step="0.01" value="${paidPrice(item)}" /><p class="field-hint">${t("actualPriceHint")}</p></div>
       ${isDental(item) ? `<div><label>${t("stockQty")}</label><input id="ei-stock" type="number" min="0" step="1" value="${trackedStock(item) == null ? "" : trackedStock(item)}" required /></div>
+      <div><label>${t("minStock")}</label><input id="ei-min-stock" type="number" min="0" step="1" value="${alertThreshold(item.minStock)}" required /></div>
       <div><label>${t("expiryDate")}</label><input id="ei-expiry" type="date" value="${escapeAttr(item.expiryDate)}" /></div>
       <div><label><input id="ei-damaged" type="checkbox" ${item.damaged ? "checked" : ""} /> ${t("damagedItem")}</label></div>` : ""}
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
@@ -2063,7 +2096,6 @@ function activityActionLabel(action) {
     cleaning_withdraw: "actCleaningWithdraw",
     cleaning_withdraw_delete: "actCleaningWithdrawDelete",
     clinic_names: "actClinicNames",
-    low_stock_limit: "actLowStockLimit",
     clinic_stock_add: "actClinicStockAdd",
     clinic_stock_delete: "actClinicStockDelete",
     user_create: "actUserCreate",
@@ -2178,12 +2210,22 @@ function requestStatusLabel(status) {
 function catalogPrice(productId) {
   const item = state.supplyItems.find((row) => String(row.id) === String(productId));
   if (!item) return "—";
-  return `${itemPrice(item)} ${t("currency")}`;
+  return `${paidPrice(item)} ${t("currency")}`;
+}
+
+function clinicAlertLimit(row) {
+  if (row?.minStock != null && row.minStock !== "") return alertThreshold(row.minStock);
+  const linked = (state.supplyItems || []).find(
+    (item) =>
+      isDental(item) &&
+      (String(item.id) === String(row?.productId) || String(item.sourceId) === String(row?.productId) || itemNameKey(item.itemName) === itemNameKey(row?.productName))
+  );
+  return alertThreshold(linked?.minStock);
 }
 
 function clinicAlertLines(row) {
   const lines = [];
-  if (isBelowStockAlert(row.quantity)) {
+  if (isBelowStockAlert(row.quantity, clinicAlertLimit(row))) {
     lines.push(t("lowClinicStock").replace("{name}", row.productName).replace("{qty}", row.quantity));
   }
   const days = daysUntil(row.expiryDate);
@@ -2193,7 +2235,7 @@ function clinicAlertLines(row) {
 }
 
 function clinicTable(rows, allowDelete) {
-  const headers = [t("itemName"), t("unitSize"), t("quantity"), t("expiryDate"), t("daysLeft")];
+  const headers = [t("itemName"), t("unitSize"), t("quantity"), t("minStock"), t("expiryDate"), t("daysLeft")];
   if (canSeePrices()) headers.push(t("price"));
   if (allowDelete) headers.push("");
   const body = rows.map((row) => {
@@ -2204,7 +2246,8 @@ function clinicTable(rows, allowDelete) {
     return `<tr>
       <td>${escapeAttr(row.productName)}</td>
       <td>${escapeAttr(row.unit)}</td>
-      <td class="${isBelowStockAlert(row.quantity) ? "stock-low" : ""}">${row.quantity}</td>
+      <td class="${isBelowStockAlert(row.quantity, clinicAlertLimit(row)) ? "stock-low" : ""}">${row.quantity}</td>
+      <td>${clinicAlertLimit(row)}</td>
       <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
       <td>${daysLabel(row.expiryDate)}</td>
       ${price}
@@ -2243,6 +2286,7 @@ function renderClinicStock() {
           <div><label>${t("itemName")}</label><input name="itemName" required /></div>
           <div><label>${t("unitSize")}</label><input name="unit" required /></div>
           <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+          <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" required /></div>
           <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
@@ -2285,15 +2329,17 @@ async function addClinicStockItem(form) {
   const productName = String(data.get("itemName") || "").trim();
   const unit = String(data.get("unit") || "").trim();
   const quantity = Number(data.get("quantity"));
+  const minStock = alertThreshold(data.get("minStock"));
   const expiryDate = String(data.get("expiryDate") || "");
   if (!productName || !unit || !Number.isFinite(quantity) || quantity < 1) return;
+  if (!Number.isFinite(Number(data.get("minStock"))) || Number(data.get("minStock")) < 0) return;
   const clinicId = sessionClinic();
   const catalog = (state.supplyItems || []).find((item) => itemNameKey(item.itemName) === itemNameKey(productName));
   const existing = (state.clinicStock || []).find(
     (row) => row.clinicId === clinicId && itemNameKey(row.productName) === itemNameKey(productName) && (row.expiryDate || "") === expiryDate
   );
   const productId = existing?.productId || catalog?.id || crypto.randomUUID();
-  const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, { productName, unit: existing?.unit || unit });
+  const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, { productName, unit: existing?.unit || unit, minStock });
   if (!added) return;
   const row = (state.clinicStock || []).find(
     (item) => item.clinicId === clinicId && String(item.productId) === String(productId) && (item.expiryDate || "") === expiryDate
@@ -2301,8 +2347,10 @@ async function addClinicStockItem(form) {
   if (row) {
     row.productName = productName;
     row.unit = unit;
+    row.minStock = minStock;
     const saved = await saveClinicStock(row);
-    if (saved?.row) Object.assign(row, saved.row, { productName, unit, quantity: row.quantity, expiryDate });
+    if (saved?.row) Object.assign(row, saved.row, { productName, unit, quantity: row.quantity, expiryDate, minStock: saved.row.minStock === undefined ? minStock : saved.row.minStock });
+    if (saved?.minStockSkipped) alert(t("minStockNeedSql"));
   }
   await recordActivity("clinic_stock_add", `${clinicName(clinicId)} — ${productName} — ${quantity}`);
   form.reset();
@@ -2482,8 +2530,16 @@ async function changeClinicStock(clinicId, productId, expiryDate, delta, meta) {
       unit: meta?.unit || "",
       quantity: 0,
       expiryDate: expiry,
+      minStock: meta?.minStock != null && meta.minStock !== "" ? alertThreshold(meta.minStock) : undefined,
     };
     state.clinicStock.push(row);
+  }
+  if (meta?.minStock != null && meta.minStock !== "") row.minStock = alertThreshold(meta.minStock);
+  else if (row.minStock == null || row.minStock === "") {
+    const linked = (state.supplyItems || []).find(
+      (item) => isDental(item) && (String(item.id) === String(productId) || String(item.sourceId) === String(productId))
+    );
+    row.minStock = alertThreshold(linked?.minStock);
   }
   const previous = Number(row.quantity) || 0;
   const next = previous + delta;
@@ -2495,7 +2551,10 @@ async function changeClinicStock(clinicId, productId, expiryDate, delta, meta) {
     notifyDbError(saved.error);
     return false;
   }
-  if (saved.row) Object.assign(row, saved.row, { quantity: next });
+  if (saved.row) {
+    const minStock = saved.row.minStock === undefined ? row.minStock : saved.row.minStock;
+    Object.assign(row, saved.row, { quantity: next, minStock });
+  }
   return true;
 }
 
@@ -2603,7 +2662,7 @@ async function acceptRequest(id) {
       type: product?.type || "",
       supplierName: product ? supplierById(product.supplierId)?.name || "" : "",
       quantity: qty,
-      unitPrice: product ? itemPrice(product) : 0,
+      unitPrice: product ? paidPrice(product) : 0,
       reason: "expired",
       expiryDate: req.expiryDate || "",
       disposedAt: todayISO(),
@@ -2756,13 +2815,15 @@ function renderExternalSupplies() {
           <div><label>${t("unitSize")}</label><input name="unit" required /></div>
           <div><label>${t("itemType")}</label><input name="type" required /></div>
           <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
-          <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
+          <div><label>${t("price")}</label><input name="price" data-list-price type="number" min="0" step="0.01" required /></div>
+          <div><label>${t("actualPrice")}</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" /><p class="field-hint">${t("actualPriceHint")}</p></div>
+          <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" required /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
       </div>`
     : "";
   const headers = canSeePrices()
-    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("quantity"), t("expiryDate"), ""]
+    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("actualPrice"), t("quantity"), t("expiryDate"), ""]
     : [t("itemName"), t("unitSize"), t("itemType")];
   const rows = items.map((item) => {
     const supplier = item.supplierName || supplierById(item.supplierId)?.name || "";
@@ -2778,6 +2839,7 @@ function renderExternalSupplies() {
       <td>${escapeAttr(item.type)}</td>
       <td>${escapeAttr(supplier)}</td>
       <td>${Number(item.price) || 0} ${t("currency")}</td>
+      <td>${paidPrice(warehouse || item)} ${t("currency")}</td>
       <td><input data-external-stock type="number" min="0" step="1" value="${escapeAttr(stockValue)}" style="max-width:110px" /></td>
       <td><input data-external-expiry type="date" value="${escapeAttr(expiryValue)}" /></td>
       <td>
@@ -2802,21 +2864,25 @@ async function syncExternalStockToWarehouse(item, { preserveQuantity = false, ap
     supplierId: item.supplierId || "",
     supplierName: item.supplierName || "",
     price: Number(item.price) || 0,
+    actualPrice: item.actualPrice != null && item.actualPrice !== "" ? item.actualPrice : existing?.actualPrice,
     stock: applyQuantity ? Number(item.stock) || 0 : preserveQuantity && existing ? existing.stock : null,
     expiryDate: applyQuantity ? item.expiryDate || "" : preserveQuantity && existing ? existing.expiryDate || "" : "",
     damaged: preserveQuantity && existing ? existing.damaged === true : false,
+    minStock: (preserveQuantity || applyQuantity) && existing && existing.minStock != null ? existing.minStock : item.minStock,
   };
   const result = await updateSupply(mirror, state.suppliers);
   if (result.error || !result.row) return { ok: false, error: result.error || t("dbSaveError") };
   const row = result.row;
   if (row.expiryDate === undefined) row.expiryDate = mirror.expiryDate;
   if (row.damaged === undefined) row.damaged = false;
+  if (row.actualPrice === undefined) row.actualPrice = mirror.actualPrice;
+  if (row.minStock === undefined) row.minStock = mirror.minStock;
   const index = (state.supplyItems || []).findIndex(
     (entry) => String(entry.sourceId) === String(item.id) || String(entry.id) === String(row.id)
   );
   if (index >= 0) state.supplyItems[index] = { ...state.supplyItems[index], ...row, category: "dental" };
   else state.supplyItems.unshift({ ...row, category: "dental" });
-  return { ok: true };
+  return { ok: true, minStockSkipped: result.minStockSkipped === true, actualPriceSkipped: result.actualPriceSkipped === true };
 }
 
 async function addExternalSupply(form) {
@@ -2831,6 +2897,8 @@ async function addExternalSupply(form) {
     supplierId,
     supplierName: supplierById(supplierId)?.name || "",
     price: Number(data.get("price")) || 0,
+    actualPrice: readPaidPrice(data.get("actualPrice"), data.get("price")),
+    minStock: alertThreshold(data.get("minStock")),
     stock: 0,
     expiryDate: "",
   };
@@ -2840,9 +2908,11 @@ async function addExternalSupply(form) {
     notifyDbError(saved.error);
     return;
   }
-  const stored = { ...row, ...(saved.row || {}), stock: 0, expiryDate: "" };
+  const stored = { ...row, ...(saved.row || {}), stock: 0, expiryDate: "", minStock: row.minStock, actualPrice: saved.row?.actualPrice === undefined ? row.actualPrice : saved.row.actualPrice };
   const synced = await syncExternalStockToWarehouse(stored);
   if (!synced.ok) notifyDbError(synced.error);
+  else if (synced.minStockSkipped) alert(t("minStockNeedSql"));
+  if (saved.actualPriceSkipped || synced.actualPriceSkipped) alert(t("actualPriceNeedSql"));
   if (!Array.isArray(state.externalSupplies)) state.externalSupplies = [];
   state.externalSupplies.unshift(stored);
   await recordActivity("external_add", stored.itemName);
@@ -2917,7 +2987,8 @@ function openEditExternal(id) {
       <div><label>${t("unitSize")}</label><input name="unit" value="${escapeAttr(item.unit)}" required /></div>
       <div><label>${t("itemType")}</label><input name="type" value="${escapeAttr(item.type)}" required /></div>
       <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
-      <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" value="${Number(item.price) || 0}" required /></div>
+      <div><label>${t("price")}</label><input name="price" data-list-price type="number" min="0" step="0.01" value="${Number(item.price) || 0}" required /></div>
+      <div><label>${t("actualPrice")}</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" value="${paidPrice(item)}" /><p class="field-hint">${t("actualPriceHint")}</p></div>
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
     </form>
   `);
@@ -2939,15 +3010,20 @@ async function saveEditedExternal(form) {
   item.supplierId = supplierId;
   item.supplierName = supplierById(supplierId)?.name || "";
   item.price = Number(data.get("price")) || 0;
+  item.actualPrice = readPaidPrice(data.get("actualPrice"), item.price);
   if (!item.itemName) return;
   const saved = await saveExternalSupply(item);
   if (saved.error) {
     notifyDbError(saved.error);
     return;
   }
-  if (saved.row) Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate });
+  if (saved.row) {
+    const actualPrice = saved.row.actualPrice === undefined ? item.actualPrice : saved.row.actualPrice;
+    Object.assign(item, saved.row, { stock: item.stock, expiryDate: item.expiryDate, actualPrice });
+  }
   const synced = await syncExternalStockToWarehouse(item, { preserveQuantity: true });
   if (!synced.ok) notifyDbError(synced.error);
+  else if (synced.actualPriceSkipped) alert(t("actualPriceNeedSql"));
   await recordActivity("external_update", item.itemName);
   closeModal();
   persist();
@@ -2994,7 +3070,8 @@ function renderCleaning() {
           <div><label>${t("unitSize")}</label><input name="unit" required /></div>
           <div><label>${t("itemType")}</label><input name="type" required /></div>
           <div><label>${t("vendor")}</label><select name="supplierId">${cleaningSupplierOptions("")}</select></div>
-          <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" required /></div>
+          <div><label>${t("price")}</label><input name="price" data-list-price type="number" min="0" step="0.01" required /></div>
+          <div><label>${t("actualPrice")}</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" /><p class="field-hint">${t("actualPriceHint")}</p></div>
           <div><label>${t("stockQty")}</label><input name="stock" type="number" min="0" step="1" required /></div>
           <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" value="1" required /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
@@ -3002,7 +3079,7 @@ function renderCleaning() {
       </div>`
     : "";
   const headers = isManager()
-    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("stockQty"), t("minStock"), ""]
+    ? [t("itemName"), t("unitSize"), t("itemType"), t("vendor"), t("price"), t("actualPrice"), t("stockQty"), t("minStock"), ""]
     : [t("itemName"), t("unitSize"), t("itemType"), t("stockQty")];
   const rows = visible.map((item) => {
     const low = Number(item.stock) <= Number(item.minStock);
@@ -3021,6 +3098,7 @@ function renderCleaning() {
       <td>${escapeAttr(item.type)}</td>
       <td>${escapeAttr(supplier)}</td>
       <td>${Number(item.price) || 0} ${t("currency")}</td>
+      <td>${paidPrice(item)} ${t("currency")}</td>
       <td class="${low ? "stock-low" : ""}">${Number(item.stock) || 0}</td>
       <td>${Number(item.minStock) || 0}</td>
       <td>
@@ -3082,7 +3160,8 @@ function openEditCleaning(id) {
       <div><label>${t("unitSize")}</label><input name="unit" value="${escapeAttr(item.unit)}" required /></div>
       <div><label>${t("itemType")}</label><input name="type" value="${escapeAttr(item.type)}" required /></div>
       <div><label>${t("vendor")}</label><select name="supplierId">${cleaningSupplierOptions(item.supplierId)}</select></div>
-      <div><label>${t("price")}</label><input name="price" type="number" min="0" step="0.01" value="${Number(item.price) || 0}" required /></div>
+      <div><label>${t("price")}</label><input name="price" data-list-price type="number" min="0" step="0.01" value="${Number(item.price) || 0}" required /></div>
+      <div><label>${t("actualPrice")}</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" value="${paidPrice(item)}" /><p class="field-hint">${t("actualPriceHint")}</p></div>
       <div><label>${t("stockQty")}</label><input name="stock" type="number" min="0" step="1" value="${Number(item.stock) || 0}" required /></div>
       <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" value="${Number(item.minStock) || 0}" required /></div>
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
@@ -3105,9 +3184,11 @@ async function saveCleaningRecord(item, action) {
     notifyDbError(saved.error);
     return null;
   }
+  if (saved.row && saved.row.actualPrice === undefined) saved.row.actualPrice = item.actualPrice;
   const index = (state.cleaningItems || []).findIndex((row) => String(row.id) === String(saved.row.id) || String(row.id) === String(item.id));
   if (index >= 0) state.cleaningItems[index] = saved.row;
   else state.cleaningItems.unshift(saved.row);
+  if (saved.actualPriceSkipped) alert(t("actualPriceNeedSql"));
   await recordActivity(action, item.itemName);
   return saved.row;
 }
@@ -3124,6 +3205,7 @@ async function addCleaningItem(form) {
     supplierId,
     supplierName: supplierById(supplierId)?.name || "",
     price: Number(data.get("price")) || 0,
+    actualPrice: readPaidPrice(data.get("actualPrice"), data.get("price")),
     stock: Number(data.get("stock")) || 0,
     minStock: Number(data.get("minStock")) || 0,
   };
@@ -3146,6 +3228,7 @@ async function saveEditedCleaning(form) {
   item.supplierId = supplierId;
   item.supplierName = supplierById(supplierId)?.name || "";
   item.price = Number(data.get("price")) || 0;
+  item.actualPrice = readPaidPrice(data.get("actualPrice"), item.price);
   item.stock = Number(data.get("stock")) || 0;
   item.minStock = Number(data.get("minStock")) || 0;
   if (!item.itemName) return;
@@ -3204,7 +3287,7 @@ async function addCleaningWithdrawal(form) {
     unit: item.unit,
     department,
     quantity,
-    unitPrice: Number(item.price) || 0,
+    unitPrice: paidPrice(item),
     date: String(data.get("date") || todayISO()),
   };
   const saved = await saveCleaningWithdrawal(row);
@@ -3259,6 +3342,7 @@ function renderAll() {
   renderExternalSupplies();
   renderCleaning();
   renderCleaningWithdrawals();
+  bindActualPriceFields();
 }
 
 document.getElementById("login-form").addEventListener("submit", async (e) => {
@@ -3663,22 +3747,6 @@ document.getElementById("settings-btn").addEventListener("click", () => {
   openModal(settingsDbHtml());
 });
 
-document.getElementById("low-stock-limit-form").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  if (!isManager()) return;
-  const raw = Number(new FormData(e.target).get("limit"));
-  const value = Math.floor(raw);
-  if (!Number.isFinite(raw) || value < 1) return;
-  const result = await upsertClinicNames({ [LOW_STOCK_SETTING]: String(value) });
-  if (result.error || result.missing) {
-    notifyDbError(result.error);
-    return;
-  }
-  state.lowStockLimit = value;
-  await recordActivity("low_stock_limit", String(value));
-  persist();
-});
-
 document.querySelectorAll("[data-supply-form]").forEach((form) => {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -3690,7 +3758,9 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
       type: data.get("type").trim(),
       supplierId: data.get("supplierId"),
       price: Number(data.get("price")),
+      actualPrice: readPaidPrice(data.get("actualPrice"), data.get("price")),
       stock: form.dataset.supplyForm === "emergency" ? null : Number(data.get("stock")),
+      minStock: form.dataset.supplyForm === "emergency" ? undefined : alertThreshold(data.get("minStock")),
       expiryDate: form.dataset.supplyForm === "emergency" ? "" : data.get("expiryDate") || "",
       damaged: form.dataset.supplyForm === "emergency" ? false : data.get("damaged") === "on",
       updatedAt: todayISO(),
@@ -3702,9 +3772,13 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
     }
     if (result.row.expiryDate === undefined) result.row.expiryDate = item.expiryDate || "";
     if (result.row.damaged === undefined) result.row.damaged = item.damaged === true;
+    if (result.row.minStock === undefined) result.row.minStock = item.minStock;
+    if (result.row.actualPrice === undefined) result.row.actualPrice = item.actualPrice;
     state.supplyItems.unshift(result.row);
     await logPrice(result.row);
     await recordActivity("supply_add", item.itemName);
+    if (result.minStockSkipped) alert(t("minStockNeedSql"));
+    if (result.actualPriceSkipped) alert(t("actualPriceNeedSql"));
     form.reset();
     persist();
   });
@@ -3849,8 +3923,12 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       item.type = document.getElementById("ei-type").value.trim();
       item.supplierId = document.getElementById("ei-supplier").value;
       item.price = Number(document.getElementById("ei-price").value);
+      const actualInput = document.getElementById("ei-actual-price");
+      if (actualInput) item.actualPrice = readPaidPrice(actualInput.value, item.price);
       const stockInput = document.getElementById("ei-stock");
       if (stockInput) item.stock = Number(stockInput.value);
+      const minInput = document.getElementById("ei-min-stock");
+      if (minInput) item.minStock = alertThreshold(minInput.value);
       const expiryInput = document.getElementById("ei-expiry");
       const damagedInput = document.getElementById("ei-damaged");
       if (expiryInput) item.expiryDate = expiryInput.value || "";
@@ -3864,6 +3942,8 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       applySavedSupply(item, result.row || item);
       await logPrice(item);
       await recordActivity("supply_update", item.itemName);
+      if (result.minStockSkipped) alert(t("minStockNeedSql"));
+      if (result.actualPriceSkipped) alert(t("actualPriceNeedSql"));
       persist();
     }
     closeModal();
@@ -4016,8 +4096,7 @@ async function hydrateFromDatabase() {
   state.disposals = cloudList(result.disposalLog);
   const clinicCloud = result.clinicNames;
   const clinicNames = clinicCloud && !clinicCloud.missing && !clinicCloud.error ? { ...(clinicCloud.names || {}) } : {};
-  state.lowStockLimit = readLowStockLimit(clinicNames[LOW_STOCK_SETTING]);
-  delete clinicNames[LOW_STOCK_SETTING];
+  delete clinicNames.low_stock_limit;
   state.clinicNames = clinicNames;
   state.requests = cloudList(result.supplyRequests);
   state.clinicStock = cloudList(result.clinicInventory);

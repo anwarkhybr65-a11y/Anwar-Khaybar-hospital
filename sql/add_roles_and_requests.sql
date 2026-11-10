@@ -42,6 +42,7 @@ create table if not exists public.clinic_inventory (
   product_name text not null default '',
   unit text not null default '',
   quantity numeric not null default 0,
+  min_stock integer not null default 6,
   expiry_date date,
   updated_at timestamptz not null default now()
 );

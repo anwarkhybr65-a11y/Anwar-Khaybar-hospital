@@ -105,6 +105,7 @@ button, input, select, textarea { font-family: inherit; }
 .login-card label,
 .login-card .selected-user { text-align: start; }
 .hint { font-size: 0.85rem; background: #f3f8f8; padding: 10px 12px; border-radius: 10px; margin-bottom: 16px; }
+.field-hint { margin: 4px 0 0; color: var(--muted); font-size: 0.8rem; }
 
 label { display: block; font-weight: 600; margin: 12px 0 6px; }
 input, select, textarea {
@@ -529,16 +530,6 @@ th { color: var(--muted); font-size: 0.85rem; }
 .confirm-box h2 { margin-bottom: 6px; }
 .confirm-box p { color: var(--muted); margin: 0 0 8px; }
 
-.low-stock-limit {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  flex-wrap: wrap;
-  margin: 0 0 16px;
-  max-width: 860px;
-}
-.low-stock-limit label { margin: 0; }
-.low-stock-limit input { width: 110px; }
 .dash-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

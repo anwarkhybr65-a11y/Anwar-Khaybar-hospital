@@ -65,12 +65,6 @@
             <button class="module-btn" type="button" data-module="cleaning-withdrawals" data-manager-only><span class="report-icon">🧴</span><span data-i18n="cleaningWithdrawals">مسحوبات النظافة</span></button>
           </div>
           <div id="staff-alerts"></div>
-          <form class="low-stock-limit" id="low-stock-limit-form" data-manager-only>
-            <label for="low-stock-limit" data-i18n="lowStockLimitLabel">يظهر تنبيه النفاد إذا قلّت الكمية عن</label>
-            <input id="low-stock-limit" name="limit" type="number" min="1" step="1" value="6" required />
-            <button class="btn btn-primary" type="submit" data-i18n="lowStockLimitSave">حفظ الحد</button>
-            <span class="empty" data-i18n="lowStockLimitHint">يسري على مستودع الأسنان ومخزون العيادات.</span>
-          </form>
           <div class="dash-cards" id="dash-cards" data-manager-only></div>
           <div id="dash-detail" class="card dash-detail" hidden></div>
           <div id="disposal-report" class="card dash-detail" hidden></div>
@@ -130,8 +124,10 @@
                 <div><label data-i18n="unitSize">الحجم أو الوحدة</label><input name="unit" required /></div>
                 <div><label data-i18n="itemType">النوع</label><input name="type" required /></div>
                 <div><label data-i18n="vendor">المورد</label><select name="supplierId" class="supplier-select" required></select></div>
-                <div><label data-i18n="price">السعر</label><input name="price" type="number" min="0" step="0.01" required /></div>
+                <div><label data-i18n="price">السعر</label><input name="price" data-list-price type="number" min="0" step="0.01" required /></div>
+                <div><label data-i18n="actualPrice">السعر الفعلي</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" /><p class="field-hint" data-i18n="actualPriceHint">يتعبأ تلقائياً من السعر. غيّره إذا كان على الصنف تخفيض من المورد.</p></div>
                 <div><label data-i18n="stockQty">الكمية في المستودع (علب)</label><input name="stock" type="number" min="0" step="1" required /></div>
+                <div><label data-i18n="minStock">الحد الأدنى للتنبيه</label><input name="minStock" type="number" min="0" step="1" required /></div>
                 <div><label data-i18n="expiryDate">تاريخ انتهاء الصلاحية</label><input name="expiryDate" type="date" /></div>
                 <div><label><input name="damaged" type="checkbox" /> <span data-i18n="damagedItem">الصنف تالف</span></label></div>
                 <div class="full"><button class="btn btn-primary" type="submit" data-i18n="saveItem">حفظ الصنف</button></div>
@@ -189,7 +185,8 @@
               <div><label data-i18n="unitSize">الحجم أو الوحدة</label><input name="unit" required /></div>
               <div><label data-i18n="itemType">النوع</label><input name="type" required /></div>
               <div><label data-i18n="vendor">المورد</label><select name="supplierId" class="supplier-select" required></select></div>
-              <div><label data-i18n="price">السعر</label><input name="price" type="number" min="0" step="0.01" required /></div>
+              <div><label data-i18n="price">السعر</label><input name="price" data-list-price type="number" min="0" step="0.01" required /></div>
+              <div><label data-i18n="actualPrice">السعر الفعلي</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" /><p class="field-hint" data-i18n="actualPriceHint">يتعبأ تلقائياً من السعر. غيّره إذا كان على الصنف تخفيض من المورد.</p></div>
               <div class="full"><button class="btn btn-primary" type="submit" data-i18n="saveItem">حفظ الصنف</button></div>
             </form>
           </div>

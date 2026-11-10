@@ -9,6 +9,7 @@ create table if not exists public.cleaning_inventory (
   supplier_id text not null default '',
   supplier_name text not null default '',
   price numeric not null default 0,
+  actual_price numeric,
   stock integer not null default 0,
   min_stock integer not null default 1,
   updated_at timestamptz not null default now()
