@@ -2141,16 +2141,31 @@ function renderClinicStock() {
     return;
   }
   if (title) title.textContent = t("clinicStocks");
-  panel.innerHTML = CLINICS.map((clinic) => {
+  const printAll = `<div class="toolbar" style="margin-bottom:12px"><button class="btn btn-navy" type="button" data-print-clinic="all">${t("print")} ${t("clinicStocks")}</button></div>`;
+  panel.innerHTML = printAll + CLINICS.map((clinic) => {
     const rows = clinicRows(clinic.id);
     const alerts = rows.flatMap(clinicAlertLines);
     return `<div class="card table-wrap">
       <h3>${escapeAttr(clinicName(clinic.id))}</h3>
+      <p><button class="btn btn-sm btn-navy" type="button" data-print-clinic="${escapeAttr(clinic.id)}">${t("print")}</button></p>
       ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
       ${rows.length ? clinicTable(rows, true) : `<p class="empty">${t("noData")}</p>`}
     </div>`;
   }).join("");
   renderStaffAlerts();
+}
+
+function printClinicStock(clinicId) {
+  if (!isManager()) return;
+  const clinics = clinicId && clinicId !== "all" ? CLINICS.filter((clinic) => clinic.id === clinicId) : CLINICS;
+  const inner = clinics
+    .map((clinic) => {
+      const rows = clinicRows(clinic.id);
+      const body = rows.length ? clinicTable(rows) : `<p>${t("noData")}</p>`;
+      return `<h2>${escapeAttr(clinicName(clinic.id))}</h2>${body}`;
+    })
+    .join("");
+  printHtml(inner, clinicId && clinicId !== "all" ? clinicName(clinicId) : t("clinicStocks"));
 }
 
 async function addClinicStockItem(form) {
@@ -3489,6 +3504,11 @@ document.getElementById("page-clinic-stock").addEventListener("submit", async (e
 });
 
 document.getElementById("page-clinic-stock").addEventListener("click", async (e) => {
+  const printBtn = e.target.closest("[data-print-clinic]");
+  if (printBtn) {
+    printClinicStock(printBtn.dataset.printClinic);
+    return;
+  }
   const button = e.target.closest("[data-del-clinic]");
   if (!button) return;
   await removeClinicStock(button.dataset.delClinic);
