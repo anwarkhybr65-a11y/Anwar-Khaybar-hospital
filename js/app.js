@@ -120,6 +120,7 @@ const I18N = {
     expiryHint: "يظهر الصنف هنا إذا كان تالفاً، أو إذا تبقى على صلاحيته شهران أو أقل.",
     insufficientStock: "الكمية المتاحة في المستودع لا تكفي لهذا السحب.",
     stockRequired: "حدّد الكمية المتاحة في المستودع قبل تسجيل السحب.",
+    itemNotInWarehouse: "الصنف غير موجود في المستودع.",
     archive: "أرشيف",
     archiveWithdrawals: "ملفات السحوبات",
     archivePrices: "سجل الأسعار",
@@ -378,6 +379,7 @@ const I18N = {
     expiryHint: "An item appears here when it is damaged, or when two months or fewer remain before it expires.",
     insufficientStock: "The warehouse does not have enough of this item for the withdrawal.",
     stockRequired: "Set the available warehouse quantity before recording a withdrawal.",
+    itemNotInWarehouse: "This item is not in the warehouse.",
     archive: "Archive",
     archiveWithdrawals: "Withdrawal files",
     archivePrices: "Price history",
@@ -910,11 +912,14 @@ function allProducts() {
   return state.supplyItems.slice().sort((a, b) => a.itemName.localeCompare(b.itemName, "ar"));
 }
 
+function itemChoiceLabel(item) {
+  const name = item?.itemName || item?.productName || "";
+  const type = String(item?.type || "").trim();
+  return type ? `${name} — ${type}` : name;
+}
+
 function productChoiceLabel(product) {
-  if (isStaff()) return product.itemName;
-  const stock = isDental(product) ? trackedStock(product) : null;
-  const note = isDental(product) ? ` — ${stock == null ? "—" : stock} ${t("boxes")}` : ` — ${t("emergencySupplies")}`;
-  return `${product.itemName}${note}`;
+  return itemChoiceLabel(product);
 }
 
 function productOptions() {
@@ -1547,7 +1552,10 @@ function bindProductCombo(combo) {
 
   function matchingProducts() {
     const query = normalizeSearchText(input.value);
-    return allProducts().filter((product) => !query || normalizeSearchText(product.itemName).includes(query));
+    return allProducts().filter((product) => {
+      if (!query) return true;
+      return normalizeSearchText(productChoiceLabel(product)).includes(query);
+    });
   }
 
   function renderList() {
@@ -1563,7 +1571,7 @@ function bindProductCombo(combo) {
     const product = state.supplyItems.find((item) => String(item.id) === String(id));
     if (!product) return;
     hidden.value = product.id;
-    input.value = product.itemName;
+    input.value = productChoiceLabel(product);
     list.hidden = true;
   }
 
@@ -1600,7 +1608,7 @@ function bindProductCombo(combo) {
       list.hidden = true;
       if (hidden.value || !normalizeSearchText(input.value)) return;
       const query = normalizeSearchText(input.value);
-      const exact = allProducts().filter((product) => normalizeSearchText(product.itemName) === query);
+      const exact = allProducts().filter((product) => normalizeSearchText(productChoiceLabel(product)) === query || normalizeSearchText(product.itemName) === query);
       if (exact.length === 1) choose(exact[0].id);
     }, 120);
   });
@@ -1617,6 +1625,13 @@ function bindWithdrawForms() {
       if (!product) {
         alert(t("selectProduct"));
         return;
+      }
+      if (isDental(product)) {
+        const days = daysUntil(product.expiryDate);
+        if (days != null && days < 0) {
+          alert(t("itemNotInWarehouse"));
+          return;
+        }
       }
       const row = {
         clinicId: form.dataset.withdrawForm,
@@ -2371,11 +2386,18 @@ async function removeClinicStock(id) {
   persist();
 }
 
+function clinicChoiceLabel(row) {
+  const catalog = (state.supplyItems || []).find(
+    (item) => String(item.id) === String(row.productId) || itemNameKey(item.itemName) === itemNameKey(row.productName)
+  );
+  return itemChoiceLabel({ itemName: row.productName, type: catalog?.type || "" });
+}
+
 function requestChoices(kind) {
   if (kind === "return") {
     return clinicRows(sessionClinic()).map((row) => ({
       value: row.id,
-      label: `${row.productName} — ${row.quantity}${row.expiryDate ? ` — ${row.expiryDate}` : ""}`,
+      label: clinicChoiceLabel(row),
       max: Number(row.quantity) || 1,
     }));
   }
@@ -2387,21 +2409,21 @@ function requestChoices(kind) {
       })
       .map((row) => ({
         value: row.id,
-        label: `${row.productName} — ${row.quantity} — ${row.expiryDate || ""}`,
+        label: clinicChoiceLabel(row),
         max: Number(row.quantity) || 1,
       }));
   }
   if (kind === "external") {
     return (state.externalSupplies || []).map((item) => ({
       value: item.id,
-      label: `${item.itemName}${item.unit ? ` — ${item.unit}` : ""}`,
+      label: itemChoiceLabel(item),
       max: "",
     }));
   }
   if (kind === "cleaning") {
     return (state.cleaningItems || [])
       .filter((item) => Number(item.stock) > 0)
-      .map((item) => ({ value: item.id, label: item.itemName, max: "" }));
+      .map((item) => ({ value: item.id, label: itemChoiceLabel(item), max: "" }));
   }
   return state.supplyItems
     .filter(isDental)
@@ -2410,9 +2432,7 @@ function requestChoices(kind) {
       const stock = trackedStock(item);
       return stock == null || stock > 0;
     })
-    .map((item) => {
-      return { value: item.id, label: item.itemName, max: "" };
-    });
+    .map((item) => ({ value: item.id, label: itemChoiceLabel(item), max: "" }));
 }
 
 function requestActions(row) {
@@ -3115,7 +3135,7 @@ function renderCleaningWithdrawals() {
   if (!panel) return;
   const available = (state.cleaningItems || []).filter((item) => Number(item.stock) > 0);
   const options = available
-    .map((item) => `<option value="${escapeAttr(item.id)}">${escapeAttr(item.itemName)}</option>`)
+    .map((item) => `<option value="${escapeAttr(item.id)}">${escapeAttr(itemChoiceLabel(item))}</option>`)
     .join("");
   const form = `<div class="card"><h3>${t("addWithdrawal")}</h3>
       ${available.length ? `<form class="form-grid" id="cleaning-withdraw-form">
