@@ -460,6 +460,33 @@ th { color: var(--muted); font-size: 0.85rem; }
   margin-bottom: 14px;
 }
 .form-grid .full { grid-column: 1 / -1; }
+.combo { position: relative; }
+.combo-list {
+  position: absolute;
+  z-index: 30;
+  inset-inline: 0;
+  top: calc(100% + 4px);
+  max-height: 240px;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: var(--shadow);
+}
+.combo-option {
+  display: block;
+  width: 100%;
+  text-align: start;
+  background: #fff;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  border-radius: 0;
+  padding: 10px 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.combo-option:hover, .combo-option.active { background: #e7f3f3; }
+.combo-empty { margin: 0; padding: 10px 12px; color: var(--muted); }
 .section-block { margin-bottom: 28px; }
 
 .modal-overlay {
@@ -502,6 +529,16 @@ th { color: var(--muted); font-size: 0.85rem; }
 .confirm-box h2 { margin-bottom: 6px; }
 .confirm-box p { color: var(--muted); margin: 0 0 8px; }
 
+.low-stock-limit {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 0 0 16px;
+  max-width: 860px;
+}
+.low-stock-limit label { margin: 0; }
+.low-stock-limit input { width: 110px; }
 .dash-cards {
   display: grid;
   grid-template-columns: repeat(3, 1fr);

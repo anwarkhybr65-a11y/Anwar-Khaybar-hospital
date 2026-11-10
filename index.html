@@ -65,6 +65,12 @@
             <button class="module-btn" type="button" data-module="cleaning-withdrawals" data-manager-only><span class="report-icon">🧴</span><span data-i18n="cleaningWithdrawals">مسحوبات النظافة</span></button>
           </div>
           <div id="staff-alerts"></div>
+          <form class="low-stock-limit" id="low-stock-limit-form" data-manager-only>
+            <label for="low-stock-limit" data-i18n="lowStockLimitLabel">يظهر تنبيه النفاد إذا قلّت الكمية عن</label>
+            <input id="low-stock-limit" name="limit" type="number" min="1" step="1" value="6" required />
+            <button class="btn btn-primary" type="submit" data-i18n="lowStockLimitSave">حفظ الحد</button>
+            <span class="empty" data-i18n="lowStockLimitHint">يسري على مستودع الأسنان ومخزون العيادات.</span>
+          </form>
           <div class="dash-cards" id="dash-cards" data-manager-only></div>
           <div id="dash-detail" class="card dash-detail" hidden></div>
           <div id="disposal-report" class="card dash-detail" hidden></div>

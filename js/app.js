@@ -35,6 +35,9 @@ import {
 
 const KEY = "anwar-khaybar-procurement";
 
+const LOW_STOCK_SETTING = "low_stock_limit";
+const DEFAULT_LOW_STOCK = 6;
+
 const CLINICS = [
   { id: "ahmed", ar: "عيادة دكتور أحمد", en: "Dr. Ahmed clinic", letter: "أ", color: "#0d6e6e" },
   { id: "faten", ar: "عيادة دكتورة فاتن", en: "Dr. Faten clinic", letter: "ف", color: "#0b2c3d" },
@@ -92,7 +95,10 @@ const I18N = {
     lowStockTitle: "تنبيه: منتجات على وشك النفاد",
     lowStockItem: "الكمية المتبقية من {name} هي {qty} علب، والمنتج على وشك النفاد.",
     lowStockCard: "قاربت على النفاد",
-    lowStockCardAlert: "تنبيه: يوجد {count} من الأصناف بكمية أقل من 6 علب في مستودع الأسنان.",
+    lowStockCardAlert: "تنبيه: يوجد {count} من الأصناف بكمية أقل من {limit} في مستودع الأسنان.",
+    lowStockLimitLabel: "يظهر تنبيه النفاد إذا قلّت الكمية عن",
+    lowStockLimitHint: "يسري على مستودع الأسنان ومخزون العيادات.",
+    lowStockLimitSave: "حفظ الحد",
     lowStockCardClear: "لا توجد مستلزمات قاربت على النفاد.",
     expiryCard: "قاربت صلاحيتها على الانتهاء",
     expiryCardAlert: "تحذير: يوجد {count} من الأصناف قاربت صلاحيتها أو تالفة.",
@@ -151,6 +157,7 @@ const I18N = {
     actCleaningWithdraw: "سحب مستلزم نظافة",
     actCleaningWithdrawDelete: "حذف مسحوب نظافة",
     actClinicNames: "تغيير أسماء العيادات",
+    actLowStockLimit: "تغيير حد تنبيه النفاد",
     actClinicStockAdd: "إضافة صنف لمخزون العيادة",
     actUserCreate: "إنشاء حساب",
     actUserBan: "حظر حساب",
@@ -346,7 +353,10 @@ const I18N = {
     lowStockTitle: "Alert: items are running low",
     lowStockItem: "{name} has {qty} boxes left and is about to run out.",
     lowStockCard: "Running low",
-    lowStockCardAlert: "Alert: {count} items have fewer than 6 boxes in the dental warehouse.",
+    lowStockCardAlert: "Alert: {count} items have fewer than {limit} in the dental warehouse.",
+    lowStockLimitLabel: "Show the low-stock alert when the quantity is below",
+    lowStockLimitHint: "Applies to the dental warehouse and clinic inventory.",
+    lowStockLimitSave: "Save limit",
     lowStockCardClear: "No supplies are running low.",
     expiryCard: "Nearing expiry",
     expiryCardAlert: "Warning: {count} items are near expiry or damaged.",
@@ -405,6 +415,7 @@ const I18N = {
     actCleaningWithdraw: "Withdraw cleaning item",
     actCleaningWithdrawDelete: "Delete cleaning withdrawal",
     actClinicNames: "Change clinic names",
+    actLowStockLimit: "Change the low-stock alert limit",
     actClinicStockAdd: "Add a clinic inventory item",
     actUserCreate: "Create account",
     actUserBan: "Ban account",
@@ -591,6 +602,7 @@ function seed() {
     deletedArchivePriceKeys: [],
     disposals: [],
     clinicNames: {},
+    lowStockLimit: DEFAULT_LOW_STOCK,
     requests: [],
     clinicStock: [],
     externalSupplies: [],
@@ -769,11 +781,25 @@ function trackedStock(item) {
   return Number.isFinite(value) ? value : null;
 }
 
+function readLowStockLimit(raw) {
+  const value = Math.floor(Number(raw));
+  return Number.isFinite(value) && value >= 1 ? value : DEFAULT_LOW_STOCK;
+}
+
+function lowStockLimit() {
+  return readLowStockLimit(state.lowStockLimit);
+}
+
+function isBelowStockAlert(quantity) {
+  if (quantity == null || quantity === "") return false;
+  const value = Number(quantity);
+  return Number.isFinite(value) && value < lowStockLimit();
+}
+
 function lowStockItems() {
   return state.supplyItems.filter((item) => {
     if (!isDental(item)) return false;
-    const stock = trackedStock(item);
-    return stock != null && stock < 6;
+    return isBelowStockAlert(trackedStock(item));
   });
 }
 
@@ -855,15 +881,25 @@ function allProducts() {
   return state.supplyItems.slice().sort((a, b) => a.itemName.localeCompare(b.itemName, "ar"));
 }
 
+function productChoiceLabel(product) {
+  if (isStaff()) return product.itemName;
+  const stock = isDental(product) ? trackedStock(product) : null;
+  const note = isDental(product) ? ` — ${stock == null ? "—" : stock} ${t("boxes")}` : ` — ${t("emergencySupplies")}`;
+  return `${product.itemName}${note}`;
+}
+
 function productOptions() {
   return `<option value="">${t("selectProduct")}</option>` + allProducts()
-    .map((p) => {
-      if (isStaff()) return `<option value="${p.id}">${p.itemName}</option>`;
-      const stock = isDental(p) ? trackedStock(p) : null;
-      const note = isDental(p) ? ` — ${stock == null ? "—" : stock} ${t("boxes")}` : ` — ${t("emergencySupplies")}`;
-      return `<option value="${p.id}">${p.itemName}${note}</option>`;
-    })
+    .map((p) => `<option value="${p.id}">${productChoiceLabel(p)}</option>`)
     .join("");
+}
+
+function productComboHtml() {
+  return `<div class="combo" data-product-combo>
+    <input class="combo-input" type="text" autocomplete="off" placeholder="${escapeAttr(t("searchItems"))}" required />
+    <input type="hidden" name="productName" />
+    <div class="combo-list" hidden></div>
+  </div>`;
 }
 
 function fillSelects() {
@@ -1005,7 +1041,7 @@ function supplyRows(items, includeStock) {
     const best = bestOffer(item.itemName, item);
     const isBest = best && best.id === item.id;
     const stock = trackedStock(item);
-    const stockCell = includeStock ? `<td class="${stock != null && stock < 6 ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>` : "";
+    const stockCell = includeStock ? `<td class="${isBelowStockAlert(stock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>` : "";
     const expiryCell = includeStock ? `<td>${item.expiryDate || t("noExpiry")}</td><td>${item.damaged ? `<span class="badge badge-danger">${t("damaged")}</span>` : t("none")}</td>` : "";
     return `<tr>
       <td>${item.itemName}</td>
@@ -1055,7 +1091,9 @@ function renderDashboardAlerts() {
   const low = lowStockItems().slice().sort((a, b) => trackedStock(a) - trackedStock(b));
   const expiring = expiryItems();
   const cleaningLow = lowCleaningItems();
-  const stockAlert = low.length ? t("lowStockCardAlert").replace("{count}", low.length) : t("lowStockCardClear");
+  const stockAlert = low.length ? t("lowStockCardAlert").replace("{count}", low.length).replace("{limit}", lowStockLimit()) : t("lowStockCardClear");
+  const limitInput = document.getElementById("low-stock-limit");
+  if (limitInput && document.activeElement !== limitInput) limitInput.value = String(lowStockLimit());
   const expiryAlert = expiring.length ? t("expiryCardAlert").replace("{count}", expiring.length) : t("expiryCardClear");
   const cleaningAlert = cleaningLow.length ? t("cleaningLowAlert").replace("{count}", cleaningLow.length) : t("cleaningLowClear");
   cards.innerHTML = `
@@ -1246,7 +1284,7 @@ function renderWarehouse() {
       <td>${item.itemName}</td>
       <td>${item.unit}</td>
       <td>${item.type}</td>
-      <td class="${stock != null && stock < 6 ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
+      <td class="${isBelowStockAlert(stock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
       <td><input data-expiry-input type="date" value="${item.expiryDate || ""}" /></td>
       <td><input data-damaged-input type="checkbox" ${item.damaged ? "checked" : ""} /></td>
       <td>
@@ -1403,7 +1441,7 @@ function renderWithdrawals() {
         <div class="card">
           <h3>${t("addWithdrawal")}</h3>
           <form class="form-grid" data-withdraw-form="${c.id}">
-            <div><label>${t("itemName")}</label><select name="productName" class="product-select" required></select></div>
+            <div><label>${t("itemName")}</label>${productComboHtml()}</div>
             <div><label>${t("date")}</label><input name="date" type="date" value="${todayISO()}" required /></div>
             <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
             <div><label>${t("requester")}</label><input name="requester" required /></div>
@@ -1471,13 +1509,85 @@ async function adjustDentalStock(product, delta) {
   return { ok: true };
 }
 
+function bindProductCombo(combo) {
+  const input = combo.querySelector(".combo-input");
+  const hidden = combo.querySelector('input[name="productName"]');
+  const list = combo.querySelector(".combo-list");
+  let active = -1;
+
+  function matchingProducts() {
+    const query = normalizeSearchText(input.value);
+    return allProducts().filter((product) => !query || normalizeSearchText(product.itemName).includes(query));
+  }
+
+  function renderList() {
+    const items = matchingProducts().slice(0, 40);
+    active = items.length ? 0 : -1;
+    list.innerHTML = items.length
+      ? items.map((product, index) => `<button type="button" class="combo-option${index === active ? " active" : ""}" data-id="${escapeAttr(product.id)}">${escapeAttr(productChoiceLabel(product))}</button>`).join("")
+      : `<p class="combo-empty">${escapeAttr(t("noData"))}</p>`;
+    list.hidden = false;
+  }
+
+  function choose(id) {
+    const product = state.supplyItems.find((item) => String(item.id) === String(id));
+    if (!product) return;
+    hidden.value = product.id;
+    input.value = product.itemName;
+    list.hidden = true;
+  }
+
+  input.addEventListener("focus", renderList);
+  input.addEventListener("input", () => {
+    hidden.value = "";
+    renderList();
+  });
+  input.addEventListener("keydown", (e) => {
+    const options = [...list.querySelectorAll(".combo-option")];
+    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+      e.preventDefault();
+      if (list.hidden) renderList();
+      const next = [...list.querySelectorAll(".combo-option")];
+      if (!next.length) return;
+      active = e.key === "ArrowDown" ? Math.min(active + 1, next.length - 1) : Math.max(active - 1, 0);
+      next.forEach((option, index) => option.classList.toggle("active", index === active));
+      next[active]?.scrollIntoView({ block: "nearest" });
+    } else if (e.key === "Enter" && !list.hidden && normalizeSearchText(input.value) && options[active]) {
+      e.preventDefault();
+      choose(options[active].dataset.id);
+    } else if (e.key === "Escape") {
+      list.hidden = true;
+    }
+  });
+  list.addEventListener("mousedown", (e) => {
+    const option = e.target.closest(".combo-option");
+    if (!option) return;
+    e.preventDefault();
+    choose(option.dataset.id);
+  });
+  input.addEventListener("blur", () => {
+    setTimeout(() => {
+      list.hidden = true;
+      if (hidden.value || !normalizeSearchText(input.value)) return;
+      const query = normalizeSearchText(input.value);
+      const exact = allProducts().filter((product) => normalizeSearchText(product.itemName) === query);
+      if (exact.length === 1) choose(exact[0].id);
+    }, 120);
+  });
+}
+
 function bindWithdrawForms() {
+  document.querySelectorAll("[data-product-combo]").forEach(bindProductCombo);
   document.querySelectorAll("[data-withdraw-form]").forEach((form) => {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const data = new FormData(form);
       const productId = data.get("productName");
       const product = state.supplyItems.find((p) => p.id === productId);
+      if (!product) {
+        alert(t("selectProduct"));
+        return;
+      }
       const row = {
         clinicId: form.dataset.withdrawForm,
         productId: product ? product.id : "",
@@ -1953,6 +2063,7 @@ function activityActionLabel(action) {
     cleaning_withdraw: "actCleaningWithdraw",
     cleaning_withdraw_delete: "actCleaningWithdrawDelete",
     clinic_names: "actClinicNames",
+    low_stock_limit: "actLowStockLimit",
     clinic_stock_add: "actClinicStockAdd",
     clinic_stock_delete: "actClinicStockDelete",
     user_create: "actUserCreate",
@@ -2072,7 +2183,7 @@ function catalogPrice(productId) {
 
 function clinicAlertLines(row) {
   const lines = [];
-  if (Number(row.quantity) < 6) {
+  if (isBelowStockAlert(row.quantity)) {
     lines.push(t("lowClinicStock").replace("{name}", row.productName).replace("{qty}", row.quantity));
   }
   const days = daysUntil(row.expiryDate);
@@ -2093,7 +2204,7 @@ function clinicTable(rows, allowDelete) {
     return `<tr>
       <td>${escapeAttr(row.productName)}</td>
       <td>${escapeAttr(row.unit)}</td>
-      <td class="${Number(row.quantity) < 6 ? "stock-low" : ""}">${row.quantity}</td>
+      <td class="${isBelowStockAlert(row.quantity) ? "stock-low" : ""}">${row.quantity}</td>
       <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
       <td>${daysLabel(row.expiryDate)}</td>
       ${price}
@@ -3552,6 +3663,22 @@ document.getElementById("settings-btn").addEventListener("click", () => {
   openModal(settingsDbHtml());
 });
 
+document.getElementById("low-stock-limit-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (!isManager()) return;
+  const raw = Number(new FormData(e.target).get("limit"));
+  const value = Math.floor(raw);
+  if (!Number.isFinite(raw) || value < 1) return;
+  const result = await upsertClinicNames({ [LOW_STOCK_SETTING]: String(value) });
+  if (result.error || result.missing) {
+    notifyDbError(result.error);
+    return;
+  }
+  state.lowStockLimit = value;
+  await recordActivity("low_stock_limit", String(value));
+  persist();
+});
+
 document.querySelectorAll("[data-supply-form]").forEach((form) => {
   form.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -3888,7 +4015,10 @@ async function hydrateFromDatabase() {
   state.priceHistory = (result.archivePrices || []).filter((row) => !(state.deletedArchivePriceIds || []).includes(String(row.id)));
   state.disposals = cloudList(result.disposalLog);
   const clinicCloud = result.clinicNames;
-  state.clinicNames = clinicCloud && !clinicCloud.missing && !clinicCloud.error ? { ...(clinicCloud.names || {}) } : {};
+  const clinicNames = clinicCloud && !clinicCloud.missing && !clinicCloud.error ? { ...(clinicCloud.names || {}) } : {};
+  state.lowStockLimit = readLowStockLimit(clinicNames[LOW_STOCK_SETTING]);
+  delete clinicNames[LOW_STOCK_SETTING];
+  state.clinicNames = clinicNames;
   state.requests = cloudList(result.supplyRequests);
   state.clinicStock = cloudList(result.clinicInventory);
   state.externalSupplies = cloudList(result.externalSupplies);
