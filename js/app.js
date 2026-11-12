@@ -744,6 +744,10 @@ function isStaff() {
   return roleOf() === "staff";
 }
 
+function isDoctor() {
+  return isStaff() && state.session?.staffKind === "doctor";
+}
+
 function isAdmin() {
   return roleOf() === "admin";
 }
@@ -2441,6 +2445,7 @@ function renderStaffAlerts() {
 }
 
 function dispenseForm(clinicId) {
+  if (!isDoctor() || clinicId !== sessionClinic()) return "";
   const rows = clinicRows(clinicId);
   if (!rows.length) return "";
   const options = rows.map((row) => `<option value="${escapeAttr(row.id)}">${escapeAttr(row.productName)} — ${Number(row.quantity) || 0}</option>`).join("");
@@ -2486,7 +2491,6 @@ function renderClinicStock() {
     return `<div class="card table-wrap">
       <h3>${escapeAttr(clinicName(clinic.id))}</h3>
       <p><button class="btn btn-sm btn-navy" type="button" data-print-clinic="${escapeAttr(clinic.id)}">${t("print")}</button></p>
-      ${dispenseForm(clinic.id)}
       ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
       ${rows.length ? clinicTable(rows, true) : `<p class="empty">${t("noData")}</p>`}
     </div>`;
@@ -2509,8 +2513,7 @@ function printClinicStock(clinicId) {
 
 async function submitDispense(form) {
   const clinicId = form.dataset.dispenseForm;
-  if (isStaff() && clinicId !== sessionClinic()) return;
-  if (!isStaff() && !isManager()) return;
+  if (!isDoctor() || clinicId !== sessionClinic()) return;
   const data = new FormData(form);
   const stock = (state.clinicStock || []).find((row) => String(row.id) === String(data.get("stockId")) && row.clinicId === clinicId);
   const quantity = Number(data.get("quantity"));
