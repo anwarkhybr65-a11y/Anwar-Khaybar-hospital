@@ -64,6 +64,38 @@ const DEPARTMENT_ACCOUNTS = [
   { clinicId: "emergency", staffKind: "nurse" },
 ];
 
+const LOGIN_PLACES = [
+  { id: "office", ar: "الإدارة", en: "Administration", users: [
+    { username: "البندري", ar: "البندري", en: "Al-Bandari", role: "admin" },
+    { username: "يوسف الجهني", ar: "يوسف الجهني", en: "Yousef Al-Juhani", role: "admin" },
+    { username: "النائب", ar: "النائب", en: "Deputy", role: "deputy" },
+  ]},
+  { id: "ahmed", users: [
+    { username: "الطبيب أحمد", ar: "الطبيب أحمد", en: "Doctor Ahmed", role: "staff", staffKind: "doctor" },
+    { username: "التمريض أماني", ar: "التمريض أماني", en: "Nurse Amani", role: "staff", staffKind: "nurse" },
+  ]},
+  { id: "faten", users: [
+    { username: "الطبيب فاتن", ar: "الطبيب فاتن", en: "Doctor Faten", role: "staff", staffKind: "doctor" },
+    { username: "التمريض رضا", ar: "التمريض رضا", en: "Nurse Reda", role: "staff", staffKind: "nurse" },
+  ]},
+  { id: "sara", users: [
+    { username: "الطبيب سارة", ar: "الطبيب سارة", en: "Doctor Sarah", role: "staff", staffKind: "doctor" },
+    { username: "التمريض أسماء", ar: "التمريض أسماء", en: "Nurse Asmaa", role: "staff", staffKind: "nurse" },
+  ]},
+  { id: "internal", users: [
+    { username: "الطبيب أماني", ar: "الطبيب أماني", en: "Doctor Amani", role: "staff", staffKind: "doctor" },
+  ]},
+  { id: "obgyn", users: [
+    { username: "الطبيب مروة", ar: "الطبيب مروة", en: "Doctor Marwa", role: "staff", staffKind: "doctor" },
+  ]},
+  { id: "lab", users: [
+    { username: "المختبر", ar: "المختبر", en: "Laboratory", role: "staff", staffKind: "doctor" },
+  ]},
+  { id: "emergency", users: [
+    { username: "تمريض عليا", ar: "تمريض عليا", en: "Nurse Olya", role: "staff", staffKind: "nurse" },
+  ]},
+];
+
 const I18N = {
   ar: {
     hospitalName: "مستشفى أنوار خيبر",
@@ -71,6 +103,18 @@ const I18N = {
     loginSubtitle: "متابعة الموردين ومسحوبات العيادات",
     chooseAccount: "اختر الحساب",
     username: "اسم المستخدم",
+    selectClinic: "اختر العيادة",
+    selectUser: "اختر المستخدم",
+    loginUser: "المستخدم",
+    piecesPerBox: "حبات العلبة الواحدة",
+    boxQty: "الكمية بالعلب",
+    pieceQty: "الكمية بالحبات",
+    pieces: "حبات",
+    applyLoginNames: "تثبيت أسماء الدخول",
+    loginNamesHint: "يثبت الأسماء الظاهرة في شاشة الدخول. الحساب الموجود يحتفظ بكلمة مروره، والحساب الجديد تظهر كلمة مروره مرة واحدة.",
+    loginNamesReady: "الأسماء جاهزة. الحسابات الموجودة احتفظت بكلمات مرورها.",
+    usernameTaken: "اسم الدخول مستخدم لحساب آخر.",
+    packNeedSql: "شغّل ملف sql/add_pack_and_login_names.sql مرة واحدة حتى يُحفظ عدد حبات العلبة وأسماء الدخول.",
     password: "كلمة المرور",
     login: "تسجيل الدخول",
     logout: "تسجيل الخروج",
@@ -332,7 +376,8 @@ const I18N = {
     resetPassword: "تغيير كلمة المرور",
     staffKind: "الوظيفة",
     newAccount: "بيانات الحساب الجديد",
-    passwordOnce: "انسخ كلمة المرور الآن، لن تظهر مرة أخرى.",
+    passwordOnce: "تبقى كلمة المرور ظاهرة في جدول الحسابات.",
+    passwordMissing: "غير محفوظة",
     adminLimit: "لا يمكن إضافة أكثر من مسؤولين اثنين.",
     deputyLimit: "يوجد نائب واحد بالفعل.",
     staffLimit: "هذه الوظيفة موجودة مسبقاً لهذه العيادة.",
@@ -357,6 +402,18 @@ const I18N = {
     loginSubtitle: "Suppliers and clinic withdrawals tracking",
     chooseAccount: "Choose an account",
     username: "Username",
+    selectClinic: "Choose a clinic",
+    selectUser: "Choose a user",
+    loginUser: "User",
+    piecesPerBox: "Pieces in one box",
+    boxQty: "Quantity in boxes",
+    pieceQty: "Quantity in pieces",
+    pieces: "pieces",
+    applyLoginNames: "Apply login names",
+    loginNamesHint: "Sets the names shown on the login screen. An existing account keeps its password. A new account shows its password once.",
+    loginNamesReady: "The names are ready. Existing accounts kept their passwords.",
+    usernameTaken: "That login name is already used by another account.",
+    packNeedSql: "Run sql/add_pack_and_login_names.sql once so the pieces per box and the login names can be saved.",
     password: "Password",
     login: "Sign in",
     logout: "Log out",
@@ -618,7 +675,8 @@ const I18N = {
     resetPassword: "Change password",
     staffKind: "Role in clinic",
     newAccount: "New account",
-    passwordOnce: "Copy the password now. It will not be shown again.",
+    passwordOnce: "The password stays visible in the account table.",
+    passwordMissing: "Not saved",
     adminLimit: "There can be only two admins.",
     deputyLimit: "A deputy already exists.",
     staffLimit: "This clinic already has that staff role.",
@@ -733,6 +791,7 @@ function applyI18n() {
   document.querySelectorAll("[data-i18n-placeholder]").forEach((el) => {
     el.placeholder = t(el.dataset.i18nPlaceholder);
   });
+  fillLoginChoices();
   applyAccess();
 }
 
@@ -812,6 +871,79 @@ function showApp(loggedIn) {
 
 function supplierById(id) {
   return state.suppliers.find((s) => s.id === id);
+}
+
+function packSize(value) {
+  const count = Math.floor(Number(value));
+  return Number.isFinite(count) && count > 0 ? count : 1;
+}
+
+function totalPieces(boxes, pieces, perBox) {
+  const per = packSize(perBox);
+  const boxCount = Math.max(0, Math.floor(Number(boxes) || 0));
+  const pieceCount = Math.max(0, Math.floor(Number(pieces) || 0));
+  return boxCount * per + pieceCount;
+}
+
+function splitPieces(total, perBox) {
+  const per = packSize(perBox);
+  const count = Math.max(0, Math.floor(Number(total) || 0));
+  return { boxes: Math.floor(count / per), pieces: count % per };
+}
+
+function formatPack(total, perBox) {
+  if (total == null || total === "") return "—";
+  const per = packSize(perBox);
+  const parts = splitPieces(total, per);
+  if (per <= 1) return `${parts.boxes} ${t("boxes")}`;
+  const text = [];
+  if (parts.boxes) text.push(`${parts.boxes} ${t("boxes")}`);
+  if (parts.pieces) text.push(`${parts.pieces} ${t("pieces")}`);
+  return text.length ? text.join(" و ") : `0 ${t("boxes")}`;
+}
+
+function rescaleCount(count, oldPer, newPer) {
+  const previous = packSize(oldPer);
+  const next = packSize(newPer);
+  if (previous === next || count == null || count === "") return count;
+  return Math.round((Number(count) / previous) * next);
+}
+
+function rowPack(row) {
+  if (row?.piecesPerBox) return packSize(row.piecesPerBox);
+  const linked = (state.supplyItems || []).find(
+    (item) => String(item.id) === String(row?.productId) || itemNameKey(item.itemName) === itemNameKey(row?.productName)
+  );
+  return packSize(linked?.piecesPerBox);
+}
+
+function loginPlaceLabel(place) {
+  if (place.ar) return state.lang === "ar" ? place.ar : place.en;
+  return clinicName(place.id);
+}
+
+function fillLoginUsers() {
+  const clinic = document.getElementById("login-clinic");
+  const user = document.getElementById("login-user");
+  if (!clinic || !user) return;
+  const place = LOGIN_PLACES.find((entry) => entry.id === clinic.value);
+  const previous = user.value;
+  const users = place?.users || [];
+  user.innerHTML = `<option value="">${escapeAttr(t("selectUser"))}</option>` + users
+    .map((entry) => `<option value="${escapeAttr(entry.username)}">${escapeAttr(state.lang === "ar" ? entry.ar : entry.en)}</option>`)
+    .join("");
+  if (users.some((entry) => entry.username === previous)) user.value = previous;
+}
+
+function fillLoginChoices() {
+  const clinic = document.getElementById("login-clinic");
+  if (!clinic) return;
+  const previous = clinic.value;
+  clinic.innerHTML = `<option value="">${escapeAttr(t("selectClinic"))}</option>` + LOGIN_PLACES
+    .map((place) => `<option value="${escapeAttr(place.id)}">${escapeAttr(loginPlaceLabel(place))}</option>`)
+    .join("");
+  if (LOGIN_PLACES.some((place) => place.id === previous)) clinic.value = previous;
+  fillLoginUsers();
 }
 
 function table(headers, rows) {
@@ -982,8 +1114,9 @@ function applySavedSupply(item, row) {
   const damaged = row.damaged === undefined ? item.damaged === true : row.damaged === true;
   const minStock = row.minStock === undefined ? item.minStock : row.minStock;
   const actualPrice = row.actualPrice === undefined ? item.actualPrice : row.actualPrice;
+  const piecesPerBox = row.piecesPerBox === undefined ? item.piecesPerBox : row.piecesPerBox;
   const warehouse = row.warehouse || item.warehouse || "dental";
-  Object.assign(item, row, { expiryDate, damaged, minStock, actualPrice, warehouse });
+  Object.assign(item, row, { expiryDate, damaged, minStock, actualPrice, piecesPerBox, warehouse });
 }
 
 function bestOffer(name, item) {
@@ -1234,9 +1367,9 @@ function renderDashboardAlerts() {
             <td>${item.unit || ""}</td>
             <td>${item.type || ""}</td>
             <td>${supplierById(item.supplierId)?.name || item.supplierName || ""}</td>
-            <td class="stock-low">${qty} ${t("boxes")}</td>
-            <td>${alertThreshold(item.minStock)}</td>
-            <td>${t("lowStockItem").replace("{name}", item.itemName).replace("{qty}", qty)}</td>
+            <td class="stock-low">${formatPack(qty, item.piecesPerBox)}</td>
+            <td>${formatPack(alertThreshold(item.minStock), item.piecesPerBox)}</td>
+            <td>${t("lowStockItem").replace("{name}", item.itemName).replace("{qty}", formatPack(qty, item.piecesPerBox))}</td>
           </tr>`;
         })
       )}`;
@@ -1254,7 +1387,7 @@ function renderDashboardAlerts() {
             <td>${item.itemName}</td>
             <td>${item.unit || ""}</td>
             <td>${supplierById(item.supplierId)?.name || item.supplierName || ""}</td>
-            <td>${qty} ${t("boxes")}</td>
+            <td>${formatPack(qty, item.piecesPerBox)}</td>
             <td>${item.expiryDate || t("noExpiry")}</td>
             <td>${daysLabel(item.expiryDate)}</td>
             <td><span class="badge ${concern === "near" ? "badge-wait" : "badge-danger"}">${disposalReasonLabel(concern)}</span></td>
@@ -1364,9 +1497,12 @@ function warehouseDrafts() {
     const row = btn.closest("tr");
     if (!row) return;
     const id = String(btn.dataset.saveStock);
-    const stock = row.querySelector("[data-stock-input]")?.value ?? "";
+    const boxes = row.querySelector("[data-boxes-input]")?.value ?? "";
+    const pieces = row.querySelector("[data-pieces-input]")?.value ?? "";
+    const pack = row.querySelector("[data-pack-input]")?.value ?? "";
     const shown = warehouseInputShown.get(id);
-    if (shown !== undefined && stock !== shown) warehouseStockDirty.set(id, stock);
+    const current = `${boxes}|${pieces}|${pack}`;
+    if (shown !== undefined && current !== shown) warehouseStockDirty.set(id, current);
     drafts.set(id, {
       expiry: row.querySelector("[data-expiry-input]")?.value || "",
       damaged: Boolean(row.querySelector("[data-damaged-input]")?.checked),
@@ -1388,7 +1524,9 @@ function warehouseAddForm(kind) {
       <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
       <div><label>${t("price")}</label><input name="price" data-list-price type="number" min="0" step="0.01" required /></div>
       <div><label>${t("actualPrice")}</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" /><p class="field-hint">${t("actualPriceHint")}</p></div>
-      <div><label>${t("stockQty")}</label><input name="stock" type="number" min="0" step="1" required /></div>
+      <div><label>${t("piecesPerBox")}</label><input name="piecesPerBox" type="number" min="1" step="1" value="1" required /></div>
+      <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
+      <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
       <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" required /></div>
       <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
@@ -1420,7 +1558,7 @@ function renderWarehouse() {
         <td>${escapeAttr(item.itemName)}</td>
         <td>${escapeAttr(item.unit)}</td>
         <td>${escapeAttr(item.type)}</td>
-        <td>${stock == null ? "—" : stock + " " + t("boxes")}</td>
+        <td>${stock == null ? "—" : formatPack(stock, item.piecesPerBox)}</td>
       </tr>`;
     });
     box.innerHTML = `<h3>${t("availableItems")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty")], rows)}`;
@@ -1431,10 +1569,15 @@ function renderWarehouse() {
     const draft = drafts.get(String(item.id));
     const expiryValue = draft ? draft.expiry : item.expiryDate || "";
     const damaged = draft ? draft.damaged : item.damaged === true;
-    const savedStock = stock == null ? "" : String(stock);
-    if (warehouseStockDirty.get(String(item.id)) === savedStock) warehouseStockDirty.delete(String(item.id));
-    const stockValue = warehouseStockDirty.has(String(item.id)) ? warehouseStockDirty.get(String(item.id)) : savedStock;
-    warehouseInputShown.set(String(item.id), String(stockValue));
+    const split = splitPieces(stock, item.piecesPerBox);
+    const savedKey = `${split.boxes}|${split.pieces}|${packSize(item.piecesPerBox)}`;
+    if (warehouseStockDirty.get(String(item.id)) === savedKey) warehouseStockDirty.delete(String(item.id));
+    const dirty = warehouseStockDirty.get(String(item.id));
+    const [dirtyBoxes, dirtyPieces, dirtyPack] = dirty ? String(dirty).split("|") : [];
+    const boxesValue = dirty ? dirtyBoxes : String(split.boxes);
+    const piecesValue = dirty ? dirtyPieces : String(split.pieces);
+    const packValue = dirty ? dirtyPack : String(packSize(item.piecesPerBox));
+    warehouseInputShown.set(String(item.id), dirty || savedKey);
     const notice = warehouseNotice && String(warehouseNotice.id) === String(item.id)
       ? `<div class="qty-saved">${escapeAttr(warehouseNotice.text)}</div>`
       : "";
@@ -1442,12 +1585,16 @@ function renderWarehouse() {
       <td>${item.itemName}</td>
       <td>${item.unit}</td>
       <td>${item.type}</td>
-      <td class="${isBelowStockAlert(stock, item.minStock) ? "stock-low" : ""}">${stock == null ? "—" : stock + " " + t("boxes")}</td>
-      <td>${alertThreshold(item.minStock)}</td>
+      <td class="${isBelowStockAlert(stock, item.minStock) ? "stock-low" : ""}">${stock == null ? "—" : formatPack(stock, item.piecesPerBox)}</td>
+      <td>${formatPack(alertThreshold(item.minStock), item.piecesPerBox)}</td>
       <td><input data-expiry-input type="date" value="${escapeAttr(expiryValue)}" /></td>
       <td><input data-damaged-input type="checkbox" ${damaged ? "checked" : ""} /></td>
       <td>
-        <input data-stock-input="${item.id}" type="number" min="0" step="1" value="${escapeAttr(stockValue)}" style="max-width:110px" />
+        <div class="pack-inputs">
+          <input data-pack-input type="number" min="1" step="1" value="${escapeAttr(packValue)}" title="${escapeAttr(t("piecesPerBox"))}" placeholder="${escapeAttr(t("piecesPerBox"))}" />
+          <input data-boxes-input type="number" min="0" step="1" value="${escapeAttr(boxesValue)}" title="${escapeAttr(t("boxQty"))}" placeholder="${escapeAttr(t("boxes"))}" />
+          <input data-pieces-input type="number" min="0" step="1" value="${escapeAttr(piecesValue)}" title="${escapeAttr(t("pieceQty"))}" placeholder="${escapeAttr(t("pieces"))}" />
+        </div>
       </td>
       <td>
         <button class="btn btn-sm btn-navy" type="button" data-edit-item="${escapeAttr(item.id)}">${t("edit")}</button>
@@ -1606,7 +1753,8 @@ function renderWithdrawals() {
           <form class="form-grid" data-withdraw-form="${c.id}">
             <div><label>${t("itemName")}</label>${productComboHtml()}</div>
             <div><label>${t("date")}</label><input name="date" type="date" value="${todayISO()}" required /></div>
-            <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+            <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
+            <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
             <div><label>${t("requester")}</label><input name="requester" required /></div>
             <div class="full"><button class="btn btn-primary" type="submit">${t("addWithdrawal")}</button></div>
           </form>
@@ -1768,10 +1916,11 @@ function bindWithdrawForms() {
         productId: product ? product.id : "",
         productName: product ? product.itemName : "",
         date: data.get("date"),
-        quantity: Number(data.get("quantity")),
+        quantity: totalPieces(data.get("boxes"), data.get("pieces"), product?.piecesPerBox),
         requester: data.get("requester").trim(),
-        unitPrice: product ? paidPrice(product) : 0,
+        unitPrice: product ? paidPrice(product) / packSize(product.piecesPerBox) : 0,
       };
+      if (row.quantity < 1) return;
       if (product && isDental(product)) {
         const available = trackedStock(product);
         if (available == null) {
@@ -1814,7 +1963,7 @@ function bindWithdrawForms() {
         row.productId,
         product?.expiryDate || "",
         row.quantity,
-        { productName: row.productName, unit: product?.unit || "" }
+        { productName: row.productName, unit: product?.unit || "", piecesPerBox: product?.piecesPerBox }
       );
       if (!addedToClinic) {
         await deleteWithdrawal(result.row.id, row.clinicId);
@@ -2424,7 +2573,7 @@ function clinicTable(rows, allowDelete) {
     return `<tr>
       <td>${escapeAttr(row.productName)}</td>
       <td>${escapeAttr(row.unit)}</td>
-      <td class="${isBelowStockAlert(row.quantity, clinicAlertLimit(row)) ? "stock-low" : ""}">${row.quantity}</td>
+      <td class="${isBelowStockAlert(row.quantity, clinicAlertLimit(row)) ? "stock-low" : ""}">${formatPack(row.quantity, rowPack(row))}</td>
       ${limit}
       <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
       <td>${daysLabel(row.expiryDate)}</td>
@@ -2456,7 +2605,8 @@ function dispenseForm(clinicId) {
   const note = state.dispensesMissing ? `<div class="clinic-alert">${t("warehouseKindNeedSql")}</div>` : "";
   return `${note}<form class="form-grid" data-dispense-form="${escapeAttr(clinicId)}">
     <div><label>${t("itemName")}</label><select name="stockId" required>${options}</select></div>
-    <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+    <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
+    <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
     <div><label>${t("date")}</label><input name="date" type="date" value="${todayISO()}" required /></div>
     <div class="full"><button class="btn btn-primary" type="submit">${t("dispense")}</button></div>
   </form>`;
@@ -2477,7 +2627,9 @@ function renderClinicStock() {
         <form class="form-grid" id="clinic-stock-form">
           <div><label>${t("itemName")}</label><input name="itemName" required /></div>
           <div><label>${t("unitSize")}</label><input name="unit" required /></div>
-          <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+          <div><label>${t("piecesPerBox")}</label><input name="piecesPerBox" type="number" min="1" step="1" value="1" required /></div>
+          <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
+          <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
           <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
@@ -2519,7 +2671,8 @@ async function submitDispense(form) {
   if (!isDoctor() || clinicId !== sessionClinic()) return;
   const data = new FormData(form);
   const stock = (state.clinicStock || []).find((row) => String(row.id) === String(data.get("stockId")) && row.clinicId === clinicId);
-  const quantity = Number(data.get("quantity"));
+  const per = rowPack(stock);
+  const quantity = totalPieces(data.get("boxes"), data.get("pieces"), per);
   if (!stock || !Number.isFinite(quantity) || quantity < 1) return;
   if (quantity > Number(stock.quantity)) {
     alert(t("insufficientStock"));
@@ -2536,7 +2689,7 @@ async function submitDispense(form) {
     productId: stock.productId,
     productName: stock.productName,
     quantity,
-    unitPrice: catalog ? paidPrice(catalog) : 0,
+    unitPrice: catalog ? paidPrice(catalog) / per : 0,
     date: String(data.get("date") || todayISO()),
   });
   if (saved.missing) {
@@ -2576,6 +2729,88 @@ async function removeDispense(id) {
   persist();
 }
 
+function namedLoginUsers() {
+  return LOGIN_PLACES.flatMap((place) => place.users.map((user) => ({
+    ...user,
+    clinicId: place.id === "office" ? "" : place.id,
+  })));
+}
+
+async function assignNamedAccounts() {
+  if (!isAdmin()) return;
+  const password = document.getElementById("admin-pass")?.value || "";
+  if (!/^\d{6}$/.test(password)) {
+    alert(t("passwordRule"));
+    return;
+  }
+  let actor = state.session?.username || "";
+  const listed = await listAppUsers(actor, password);
+  if (listed.error) {
+    alert(userAdminMessage(listed.error));
+    return;
+  }
+  let users = listed.users || [];
+  const created = [];
+  const directory = namedLoginUsers();
+
+  async function refreshUsers() {
+    const again = await listAppUsers(actor, password);
+    if (!again.error) users = again.users || [];
+  }
+
+  for (const spec of directory) {
+    if (users.some((user) => user.username === spec.username && user.banned !== true)) continue;
+    const match = users.find((user) => {
+      if (user.banned || user.username === spec.username) return false;
+      if (directory.some((item) => item.username === user.username)) return false;
+      if (spec.role === "admin") return user.role === "admin";
+      if (spec.role === "deputy") return user.role === "deputy";
+      return user.role === "staff" && user.clinicId === spec.clinicId && user.staffKind === spec.staffKind;
+    });
+    if (match) {
+      const renamed = await manageAppUser({
+        p_actor: actor,
+        p_password: password,
+        p_action: "rename",
+        p_target: match.username,
+        p_username: spec.username,
+      });
+      if (renamed.error || renamed.ok === false) {
+        alert(userAdminMessage(renamed.message || renamed.error));
+        return;
+      }
+      if (match.username === actor) {
+        actor = spec.username;
+        state.session.username = spec.username;
+        save(state);
+        applyAccess();
+      }
+      await refreshUsers();
+      continue;
+    }
+    const result = await manageAppUser({
+      p_actor: actor,
+      p_password: password,
+      p_action: "create",
+      p_role: spec.role,
+      p_clinic_id: spec.clinicId,
+      p_staff_kind: spec.staffKind || "",
+      p_username: spec.username,
+    });
+    if (result.error || result.ok === false) {
+      if (/staff_limit|admin_limit|deputy_limit|username_taken/.test(result.message || "")) continue;
+      alert(userAdminMessage(result.message || result.error));
+      return;
+    }
+    created.push({ username: result.username, password: result.password });
+    await recordActivity("user_create", result.username);
+    await refreshUsers();
+  }
+
+  const notice = `<p>${created.length ? t("passwordOnce") : t("loginNamesReady")}</p>`;
+  await refreshUserTable(password, notice);
+}
+
 async function createDepartmentAccounts() {
   if (!isAdmin()) return;
   const password = document.getElementById("admin-pass")?.value || "";
@@ -2612,7 +2847,8 @@ async function addClinicStockItem(form) {
   const data = new FormData(form);
   const productName = String(data.get("itemName") || "").trim();
   const unit = String(data.get("unit") || "").trim();
-  const quantity = Number(data.get("quantity"));
+  const piecesPerBox = packSize(data.get("piecesPerBox"));
+  const quantity = totalPieces(data.get("boxes"), data.get("pieces"), piecesPerBox);
   const expiryDate = String(data.get("expiryDate") || "");
   if (!productName || !unit || !Number.isFinite(quantity) || quantity < 1) return;
   const clinicId = sessionClinic();
@@ -2622,7 +2858,7 @@ async function addClinicStockItem(form) {
   );
   const minStock = existing?.minStock != null && existing.minStock !== "" ? alertThreshold(existing.minStock) : alertThreshold(catalog?.minStock);
   const productId = existing?.productId || catalog?.id || crypto.randomUUID();
-  const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, { productName, unit: existing?.unit || unit, minStock });
+  const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, { productName, unit: existing?.unit || unit, minStock, piecesPerBox });
   if (!added) return;
   const row = (state.clinicStock || []).find(
     (item) => item.clinicId === clinicId && String(item.productId) === String(productId) && (item.expiryDate || "") === expiryDate
@@ -2632,8 +2868,9 @@ async function addClinicStockItem(form) {
     row.unit = unit;
     row.minStock = minStock;
     const saved = await saveClinicStock(row);
-    if (saved?.row) Object.assign(row, saved.row, { productName, unit, quantity: row.quantity, expiryDate, minStock: saved.row.minStock === undefined ? minStock : saved.row.minStock });
+    if (saved?.row) Object.assign(row, saved.row, { productName, unit, quantity: row.quantity, expiryDate, piecesPerBox: saved.row.piecesPerBox === undefined ? row.piecesPerBox : saved.row.piecesPerBox, minStock: saved.row.minStock === undefined ? minStock : saved.row.minStock });
     if (saved?.minStockSkipped) alert(t("minStockNeedSql"));
+    if (saved?.packSkipped) alert(t("packNeedSql"));
   }
   await recordActivity("clinic_stock_add", `${clinicName(clinicId)} — ${productName} — ${quantity}`);
   form.reset();
@@ -2824,6 +3061,13 @@ async function changeClinicStock(clinicId, productId, expiryDate, delta, meta) {
     };
     state.clinicStock.push(row);
   }
+  if (meta?.piecesPerBox != null && meta.piecesPerBox !== "") row.piecesPerBox = packSize(meta.piecesPerBox);
+  else if (!row.piecesPerBox) {
+    const linkedPack = (state.supplyItems || []).find(
+      (item) => isDental(item) && (String(item.id) === String(productId) || String(item.sourceId) === String(productId))
+    );
+    if (linkedPack?.piecesPerBox) row.piecesPerBox = packSize(linkedPack.piecesPerBox);
+  }
   if (meta?.minStock != null && meta.minStock !== "") row.minStock = alertThreshold(meta.minStock);
   else if (row.minStock == null || row.minStock === "") {
     const linked = (state.supplyItems || []).find(
@@ -2843,7 +3087,8 @@ async function changeClinicStock(clinicId, productId, expiryDate, delta, meta) {
   }
   if (saved.row) {
     const minStock = saved.row.minStock === undefined ? row.minStock : saved.row.minStock;
-    Object.assign(row, saved.row, { quantity: next, minStock });
+    const piecesPerBox = saved.row.piecesPerBox === undefined ? row.piecesPerBox : saved.row.piecesPerBox;
+    Object.assign(row, saved.row, { quantity: next, minStock, piecesPerBox });
   }
   return true;
 }
@@ -3020,12 +3265,14 @@ function userAdminMessage(code) {
   if (/admin_limit/.test(text)) return t("adminLimit");
   if (/deputy_limit/.test(text)) return t("deputyLimit");
   if (/staff_limit/.test(text)) return t("staffLimit");
+  if (/username_taken/.test(text)) return t("usernameTaken");
   if (/admin_required/.test(text)) return t("loginError");
-  if (/list_app_users|manage_app_user|schema cache|Could not find the function/i.test(text)) return t("usersNeedSql");
+  if (/schema cache|Could not find the function/i.test(text)) return t("packNeedSql");
+  if (/list_app_users|manage_app_user/i.test(text)) return t("usersNeedSql");
   return text;
 }
 
-function renderUserTable(users) {
+function renderUserTable(users, notice = "") {
   const box = document.getElementById("user-admin-result");
   if (!box) return;
   const rows = (users || []).map((user) => {
@@ -3033,8 +3280,10 @@ function renderUserTable(users) {
     const clinic = user.clinicId ? clinicName(user.clinicId) : "";
     const banLabel = user.banned ? t("unbanUser") : t("banUser");
     const action = user.banned ? "unban" : "ban";
+    const savedPassword = String(user.password || "").trim();
     return `<tr>
       <td>${escapeAttr(user.username)}</td>
+      <td>${escapeAttr(savedPassword || t("passwordMissing"))}</td>
       <td>${escapeAttr(role)}</td>
       <td>${escapeAttr(clinic)}</td>
       <td>${user.banned ? t("accountBanned") : t("accepted")}</td>
@@ -3044,7 +3293,17 @@ function renderUserTable(users) {
       </td>
     </tr>`;
   });
-  box.innerHTML = table([t("username"), t("accountRole"), t("clinic"), t("requestStatus"), ""], rows);
+  box.innerHTML = `${notice}${table([t("username"), t("password"), t("accountRole"), t("clinic"), t("requestStatus"), ""], rows)}`;
+}
+
+async function refreshUserTable(password, notice = "") {
+  const listed = await listAppUsers(state.session?.username || "", password);
+  if (listed.error) {
+    alert(userAdminMessage(listed.error));
+    return false;
+  }
+  renderUserTable(listed.users, notice);
+  return true;
 }
 
 function showNewCredentials(username, password) {
@@ -3083,9 +3342,9 @@ function userAdminHtml() {
       <div class="full"><button class="btn btn-primary" type="submit">${t("addUser")}</button></div>
     </form>
     <div class="card">
-      <h3>${t("createDepartmentUsers")}</h3>
-      <p>${t("departmentUsersHint")}</p>
-      <button class="btn btn-navy" type="button" id="create-department-users">${t("createDepartmentUsers")}</button>
+      <h3>${t("applyLoginNames")}</h3>
+      <p>${t("loginNamesHint")}</p>
+      <button class="btn btn-navy" type="button" id="apply-login-names">${t("applyLoginNames")}</button>
     </div>`;
 }
 
@@ -3649,6 +3908,8 @@ function renderAll() {
   bindActualPriceFields();
 }
 
+document.getElementById("login-clinic")?.addEventListener("change", fillLoginUsers);
+
 document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.currentTarget;
@@ -3857,14 +4118,19 @@ document.getElementById("page-archive").addEventListener("click", (e) => {
 });
 
 function warehouseRowValues(row, includeStock) {
-  const stockText = row.querySelector("[data-stock-input]")?.value ?? "";
+  const boxesText = row.querySelector("[data-boxes-input]")?.value ?? "";
+  const piecesText = row.querySelector("[data-pieces-input]")?.value ?? "";
+  const packText = row.querySelector("[data-pack-input]")?.value ?? "";
   let stock;
-  if (includeStock && stockText !== "") {
-    stock = Number(stockText);
+  let piecesPerBox;
+  if (includeStock && (boxesText !== "" || piecesText !== "" || packText !== "")) {
+    piecesPerBox = packSize(packText);
+    stock = totalPieces(boxesText, piecesText, piecesPerBox);
     if (!Number.isFinite(stock) || stock < 0) return null;
   }
   return {
     stock,
+    piecesPerBox,
     expiry: row.querySelector("[data-expiry-input]")?.value || "",
     damaged: Boolean(row.querySelector("[data-damaged-input]")?.checked),
   };
@@ -3924,7 +4190,8 @@ async function addWarehouseItem(form) {
     supplierId: data.get("supplierId"),
     price: Number(data.get("price")) || 0,
     actualPrice: readPaidPrice(data.get("actualPrice"), data.get("price")),
-    stock: Number(data.get("stock")),
+    piecesPerBox: packSize(data.get("piecesPerBox")),
+    stock: totalPieces(data.get("boxes"), data.get("pieces"), data.get("piecesPerBox")),
     minStock: alertThreshold(data.get("minStock")),
     expiryDate: data.get("expiryDate") || "",
     damaged: false,
@@ -3946,6 +4213,7 @@ async function addWarehouseItem(form) {
   await recordActivity("supply_add", `${warehouseName(warehouse)} — ${item.itemName}`);
   if (result.minStockSkipped) alert(t("minStockNeedSql"));
   if (result.actualPriceSkipped) alert(t("actualPriceNeedSql"));
+  if (result.packSkipped) alert(t("packNeedSql"));
   form.reset();
   persist();
 }
@@ -3953,9 +4221,15 @@ async function addWarehouseItem(form) {
 async function writeWarehouseRow(item, values) {
   const previous = {
     stock: item.stock,
+    piecesPerBox: item.piecesPerBox,
+    minStock: item.minStock,
     expiryDate: item.expiryDate || "",
     damaged: item.damaged === true,
   };
+  if (values.piecesPerBox !== undefined && packSize(values.piecesPerBox) !== packSize(item.piecesPerBox)) {
+    item.minStock = rescaleCount(item.minStock, item.piecesPerBox, values.piecesPerBox);
+    item.piecesPerBox = values.piecesPerBox;
+  }
   if (values.stock !== undefined) item.stock = values.stock;
   item.expiryDate = values.expiry;
   item.damaged = values.damaged;
@@ -3964,6 +4238,8 @@ async function writeWarehouseRow(item, values) {
   const result = await updateSupply(item, state.suppliers);
   if (result.error || !result.row) {
     item.stock = previous.stock;
+    item.piecesPerBox = previous.piecesPerBox;
+    item.minStock = previous.minStock;
     item.expiryDate = previous.expiryDate;
     item.damaged = previous.damaged;
     notifyDbError(result.error);
@@ -3979,6 +4255,7 @@ async function writeWarehouseRow(item, values) {
     return;
   }
   warehouseNotice = { id: item.id, text: t("warehouseExpirySaved") };
+  if (result.packSkipped && values.piecesPerBox !== undefined) alert(t("packNeedSql"));
   if (values.stock !== undefined) {
     warehouseStockDirty.delete(String(item.id));
     const added = Number(item.stock) - (previous.stock == null ? 0 : Number(previous.stock));
@@ -4209,7 +4486,8 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
       supplierId: data.get("supplierId"),
       price: Number(data.get("price")),
       actualPrice: readPaidPrice(data.get("actualPrice"), data.get("price")),
-      stock: form.dataset.supplyForm === "emergency" ? null : Number(data.get("stock")),
+      piecesPerBox: form.dataset.supplyForm === "emergency" ? undefined : packSize(data.get("piecesPerBox")),
+      stock: form.dataset.supplyForm === "emergency" ? null : totalPieces(data.get("boxes"), data.get("pieces"), data.get("piecesPerBox")),
       minStock: form.dataset.supplyForm === "emergency" ? undefined : alertThreshold(data.get("minStock")),
       expiryDate: form.dataset.supplyForm === "emergency" ? "" : data.get("expiryDate") || "",
       damaged: form.dataset.supplyForm === "emergency" ? false : data.get("damaged") === "on",
@@ -4232,6 +4510,7 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
     await recordActivity("supply_add", item.itemName);
     if (result.minStockSkipped) alert(t("minStockNeedSql"));
     if (result.actualPriceSkipped) alert(t("actualPriceNeedSql"));
+    if (result.packSkipped) alert(t("packNeedSql"));
     form.reset();
     persist();
   });
@@ -4282,16 +4561,11 @@ document.getElementById("modal").addEventListener("click", async (e) => {
   }
   const userAction = action === "ban" ? "user_ban" : action === "unban" ? "user_unban" : action === "reset" ? "user_reset" : "";
   if (userAction) await recordActivity(userAction, target);
-  if (action === "reset" && result.password) showNewCredentials(result.username || target, result.password);
-  else {
-    const listed = await listAppUsers(state.session?.username || "", password);
-    if (listed.error) alert(userAdminMessage(listed.error));
-    else renderUserTable(listed.users);
-  }
+  await refreshUserTable(password);
 });
 document.getElementById("modal").addEventListener("click", async (e) => {
-  if (e.target.id !== "create-department-users") return;
-  await createDepartmentAccounts();
+  if (e.target.id !== "apply-login-names") return;
+  await assignNamedAccounts();
 });
 document.getElementById("modal").addEventListener("change", (e) => {
   if (e.target.id !== "new-user-role") return;
@@ -4305,12 +4579,7 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
   if (e.target.id === "user-auth-form") {
     e.preventDefault();
     const password = document.getElementById("admin-pass")?.value || "";
-    const listed = await listAppUsers(state.session?.username || "", password);
-    if (listed.error) {
-      alert(userAdminMessage(listed.error));
-      return;
-    }
-    renderUserTable(listed.users);
+    await refreshUserTable(password);
     return;
   }
   if (e.target.id === "user-create-form") {
@@ -4335,7 +4604,7 @@ document.getElementById("modal").addEventListener("submit", async (e) => {
       return;
     }
     await recordActivity("user_create", `${result.username} — ${role === "staff" ? (data.get("staffKind") === "nurse" ? t("roleNurse") : t("roleDoctor")) : role === "deputy" ? t("roleDeputy") : t("roleAdmin")}`);
-    showNewCredentials(result.username, result.password);
+    await refreshUserTable(password, `<p>${t("passwordOnce")}</p>`);
     return;
   }
   if (e.target.id === "request-edit-form") {
