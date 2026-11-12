@@ -60,7 +60,7 @@
             <button class="module-btn" type="button" data-module="requests"><span class="report-icon">📝</span><span data-i18n="requests">الطلبات</span><span class="module-count" id="request-count" hidden></span></button>
             <button class="module-btn" type="button" data-module="clinic-stock"><span class="report-icon">🏥</span><span data-nav-clinic data-i18n="clinicStocks">مخزون العيادات</span></button>
             <button class="module-btn" type="button" data-module="withdrawals"><span class="report-icon">📤</span><span data-nav-withdrawals data-i18n="withdrawals">مسحوبات العيادات</span></button>
-            <button class="module-btn" type="button" data-module="warehouse" data-manager-only><span class="report-icon">🏬</span><span data-i18n="warehouse">المستودع</span></button>
+            <button class="module-btn" type="button" data-module="warehouse" data-manager-only><span class="report-icon">🏬</span><span data-i18n="warehouses">المستودعات</span></button>
             <button class="module-btn" type="button" data-module="cleaning" data-manager-only><span class="report-icon">🧼</span><span data-i18n="cleaningWarehouse">مستودع مستلزمات النظافة</span></button>
             <button class="module-btn" type="button" data-module="cleaning-withdrawals" data-manager-only><span class="report-icon">🧴</span><span data-i18n="cleaningWithdrawals">مسحوبات النظافة</span></button>
           </div>
@@ -95,8 +95,10 @@
         </section>
 
         <section class="page" id="page-warehouse">
-          <h2 class="page-title" data-i18n="warehouse">المستودع</h2>
-          <p class="empty" data-i18n="warehouseHint">كميات مستلزمات الأسنان المتاحة. أي سحب من العيادات يخصم من هذه الكمية.</p>
+          <h2 class="page-title" data-i18n="warehouses">المستودعات</h2>
+          <div class="subnav" id="warehouse-tabs"></div>
+          <p class="empty" id="warehouse-hint"></p>
+          <div id="warehouse-panel"></div>
           <div class="product-search"><input data-catalog-search="warehouse" data-i18n-placeholder="searchItems" placeholder="ابحث عن صنف..." /></div>
           <div class="card table-wrap" id="warehouse-table"></div>
         </section>
@@ -202,6 +204,7 @@
           <div class="subnav">
             <button class="subnav-btn active" type="button" data-archive="withdrawals" data-i18n="archiveWithdrawals">ملفات السحوبات</button>
             <button class="subnav-btn" type="button" data-archive="prices" data-i18n="archivePrices">سجل الأسعار</button>
+            <button class="subnav-btn" type="button" data-archive="inputs" data-i18n="inputsArchive">المدخلات</button>
             <button class="subnav-btn" type="button" data-archive="charts" data-i18n="archiveCharts">الرسوم البيانية</button>
             <button class="subnav-btn" type="button" data-archive="activity" data-i18n="activityLog">سجل العمليات</button>
           </div>
@@ -222,21 +225,14 @@
               <div id="archive-prices-table"></div>
             </div>
           </div>
+          <div class="subpage" id="archive-inputs">
+            <div class="card table-wrap" id="archive-inputs-table"></div>
+          </div>
           <div class="subpage" id="archive-charts">
             <div class="toolbar" style="margin-bottom:12px">
               <button class="btn btn-navy" type="button" data-print-archive="charts" data-i18n="print">طباعة</button>
             </div>
-            <div id="archive-charts-print">
-              <div class="card">
-                <h3 data-i18n="chartByVendor">تغيّر الأسعار لكل مورد</h3>
-                <select id="chart-vendor" class="supplier-select"></select>
-                <canvas id="chart-vendor-canvas" height="120"></canvas>
-              </div>
-              <div class="card">
-                <h3 data-i18n="chartCompare">مقارنة أسعار الموردين</h3>
-                <canvas id="chart-compare-canvas" height="120"></canvas>
-              </div>
-            </div>
+            <div id="archive-charts-print"></div>
           </div>
           <div class="subpage" id="archive-activity">
             <div class="toolbar" style="margin-bottom:12px">

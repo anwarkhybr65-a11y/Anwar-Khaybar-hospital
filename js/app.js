@@ -25,6 +25,10 @@ import {
   saveCleaningItem,
   saveCleaningWithdrawal,
   saveClinicStock,
+  insertWarehouseInput,
+  insertDispense,
+  deleteDispense,
+  ensureDentalWarehouseKindColumn,
   saveActivity,
   saveExternalSupply,
   saveSupplyRequest,
@@ -38,9 +42,26 @@ const KEY = "anwar-khaybar-procurement";
 const DEFAULT_LOW_STOCK = 6;
 
 const CLINICS = [
-  { id: "ahmed", ar: "عيادة دكتور أحمد", en: "Dr. Ahmed clinic", letter: "أ", color: "#0d6e6e" },
-  { id: "faten", ar: "عيادة دكتورة فاتن", en: "Dr. Faten clinic", letter: "ف", color: "#0b2c3d" },
-  { id: "sara", ar: "عيادة دكتورة سارة", en: "Dr. Sarah clinic", letter: "س", color: "#c9a227" },
+  { id: "ahmed", ar: "عيادة دكتور أحمد", en: "Dr. Ahmed clinic", letter: "أ", color: "#0d6e6e", warehouses: ["dental", "general"] },
+  { id: "faten", ar: "عيادة دكتورة فاتن", en: "Dr. Faten clinic", letter: "ف", color: "#0b2c3d", warehouses: ["dental", "general"] },
+  { id: "sara", ar: "عيادة دكتورة سارة", en: "Dr. Sarah clinic", letter: "س", color: "#c9a227", warehouses: ["dental", "general"] },
+  { id: "emergency", ar: "مخزون الطوارئ", en: "Emergency stock", letter: "ط", color: "#b42318", warehouses: ["general"] },
+  { id: "lab", ar: "مخزون المختبر", en: "Laboratory stock", letter: "م", color: "#1d4e89", warehouses: ["medical", "general"] },
+  { id: "obgyn", ar: "مخزون عيادة النساء والولادة", en: "Obstetrics and gynecology stock", letter: "ن", color: "#7a3e6d", warehouses: ["medical", "general"] },
+  { id: "internal", ar: "مخزون الباطنة", en: "Internal medicine stock", letter: "ب", color: "#0f6e56", warehouses: ["medical", "general"] },
+];
+
+const WAREHOUSES = [
+  { id: "dental", ar: "مستودع الأسنان", en: "Dental warehouse" },
+  { id: "general", ar: "مستودع عام", en: "General warehouse" },
+  { id: "medical", ar: "مستودع طب بشري", en: "Medical warehouse" },
+];
+
+const DEPARTMENT_ACCOUNTS = [
+  { clinicId: "lab", staffKind: "doctor" },
+  { clinicId: "internal", staffKind: "doctor" },
+  { clinicId: "obgyn", staffKind: "doctor" },
+  { clinicId: "emergency", staffKind: "nurse" },
 ];
 
 const I18N = {
@@ -73,7 +94,30 @@ const I18N = {
     dentalSupplies: "مستلزمات الأسنان",
     emergencySupplies: "مستلزمات الطوارئ",
     warehouse: "المستودع",
+    warehouses: "المستودعات",
+    dentalWarehouse: "مستودع الأسنان",
+    generalWarehouse: "مستودع عام",
+    medicalWarehouse: "مستودع طب بشري",
     warehouseHint: "كميات مستلزمات الأسنان المتاحة. أي سحب من العيادات يخصم من هذه الكمية.",
+    dentalWarehouseHint: "مستودع الأسنان. عيادات الأسنان تسحب منه، ويمكنها أيضاً السحب من المستودع العام.",
+    generalWarehouseHint: "مستلزمات مشتركة لكل العيادات. أي سحب من هذا المستودع يخصم من كميته.",
+    medicalWarehouseHint: "مستودع المختبر والباطنة والنساء والولادة. السحب يخصم من هذه الكمية.",
+    warehouseKindNeedSql: "لتفعيل المستودعات الجديدة وسجل المدخلات والصرف، شغّل ملف sql/add_departments.sql مرة واحدة ثم أعد تحميل الصفحة.",
+    inputsArchive: "المدخلات",
+    inputsHint: "كل كمية تُضاف إلى أحد المستودعات تُسجل هنا.",
+    dispense: "صرف",
+    dispenseArchive: "أرشيف الصرف",
+    weeklyDispense: "صرف الأسبوع",
+    monthlyDispense: "صرف الشهر",
+    weeklyValue: "قيمة الأسبوع",
+    monthlyValue: "قيمة الشهر",
+    expectedDays: "المدة المتوقعة بالأيام",
+    onHand: "الكمية لدى القسم",
+    pieWithdrawals: "حصة المسحوبات",
+    noDispenseRate: "لا توجد حركة صرف كافية",
+    createDepartmentUsers: "إنشاء حسابات الأقسام",
+    departmentUsersHint: "ينشئ طبيباً للمختبر وطبيباً للباطنة وطبيباً للنساء والولادة وتمريضاً للطوارئ. تظهر بيانات الدخول مرة واحدة.",
+    consumptionArchive: "أرشيف الاستهلاك",
     cleaningWarehouse: "مستودع مستلزمات النظافة",
     cleaningWarehouseHint: "أصناف النظافة والمطهرات والكميات المتاحة.",
     cleaningWithdrawals: "مسحوبات النظافة",
@@ -141,6 +185,8 @@ const I18N = {
     actRequestSave: "حفظ طلب",
     actWithdrawalAdd: "تسجيل مسحوب",
     actWithdrawalDelete: "حذف مسحوب",
+    actDispense: "صرف من مخزون القسم",
+    actDispenseDelete: "حذف صرف",
     actSupplyAdd: "إضافة صنف",
     actSupplyUpdate: "تعديل صنف",
     actSupplyDelete: "حذف صنف",
@@ -334,7 +380,30 @@ const I18N = {
     dentalSupplies: "Dental supplies",
     emergencySupplies: "Emergency supplies",
     warehouse: "Warehouse",
+    warehouses: "Warehouses",
+    dentalWarehouse: "Dental warehouse",
+    generalWarehouse: "General warehouse",
+    medicalWarehouse: "Medical warehouse",
     warehouseHint: "Available dental supply quantities. Clinic withdrawals are deducted from this stock.",
+    dentalWarehouseHint: "Dental warehouse. Dental clinics withdraw from it, and they can also withdraw shared items from the general warehouse.",
+    generalWarehouseHint: "Supplies shared by every clinic. A withdrawal reduces this quantity.",
+    medicalWarehouseHint: "Warehouse for the laboratory, internal medicine, and obstetrics. A withdrawal reduces this quantity.",
+    warehouseKindNeedSql: "To enable the new warehouses, the input log, and dispensing, run sql/add_departments.sql once, then reload the page.",
+    inputsArchive: "Inputs",
+    inputsHint: "Every quantity added to a warehouse is recorded here.",
+    dispense: "Dispense",
+    dispenseArchive: "Dispense archive",
+    weeklyDispense: "Dispensed this week",
+    monthlyDispense: "Dispensed this month",
+    weeklyValue: "Week value",
+    monthlyValue: "Month value",
+    expectedDays: "Expected days left",
+    onHand: "Quantity on hand",
+    pieWithdrawals: "Withdrawal share",
+    noDispenseRate: "Not enough dispensing history",
+    createDepartmentUsers: "Create department accounts",
+    departmentUsersHint: "Creates a doctor for the laboratory, internal medicine, and obstetrics, plus a nurse for emergency. The login details are shown once.",
+    consumptionArchive: "Consumption archive",
     cleaningWarehouse: "Cleaning supplies warehouse",
     cleaningWarehouseHint: "Cleaning supplies, disinfectants, and available quantities.",
     cleaningWithdrawals: "Cleaning withdrawals",
@@ -402,6 +471,8 @@ const I18N = {
     actRequestSave: "Save request",
     actWithdrawalAdd: "Record withdrawal",
     actWithdrawalDelete: "Delete withdrawal",
+    actDispense: "Dispense from department stock",
+    actDispenseDelete: "Delete a dispense",
     actSupplyAdd: "Add item",
     actSupplyUpdate: "Edit item",
     actSupplyDelete: "Delete item",
@@ -614,6 +685,11 @@ function seed() {
     cleaningWithdrawals: [],
     cleaningMissing: false,
     activityLog: [],
+    warehouseInputs: [],
+    dispenses: [],
+    warehouseInputsMissing: false,
+    dispensesMissing: false,
+    warehouseKindReady: true,
   };
 }
 
@@ -902,7 +978,8 @@ function applySavedSupply(item, row) {
   const damaged = row.damaged === undefined ? item.damaged === true : row.damaged === true;
   const minStock = row.minStock === undefined ? item.minStock : row.minStock;
   const actualPrice = row.actualPrice === undefined ? item.actualPrice : row.actualPrice;
-  Object.assign(item, row, { expiryDate, damaged, minStock, actualPrice });
+  const warehouse = row.warehouse || item.warehouse || "dental";
+  Object.assign(item, row, { expiryDate, damaged, minStock, actualPrice, warehouse });
 }
 
 function bestOffer(name, item) {
@@ -914,6 +991,25 @@ function bestOffer(name, item) {
 
 function allProducts() {
   return state.supplyItems.slice().sort((a, b) => a.itemName.localeCompare(b.itemName, "ar"));
+}
+
+function itemWarehouse(item) {
+  return item?.warehouse === "general" || item?.warehouse === "medical" ? item.warehouse : "dental";
+}
+
+function warehouseName(id) {
+  const row = WAREHOUSES.find((entry) => entry.id === id);
+  if (!row) return id;
+  return state.lang === "ar" ? row.ar : row.en;
+}
+
+function clinicWarehouses(clinicId) {
+  return CLINICS.find((clinic) => clinic.id === clinicId)?.warehouses || ["dental", "general"];
+}
+
+function productsForClinic(clinicId) {
+  const allowed = new Set(clinicWarehouses(clinicId));
+  return allProducts().filter((product) => isDental(product) && allowed.has(itemWarehouse(product)));
 }
 
 function itemChoiceLabel(item) {
@@ -1009,44 +1105,6 @@ async function logPrice(item) {
   state.priceHistory.unshift(saved.row);
 }
 
-function chartHistory() {
-  const history = (state.priceHistory || []).slice();
-  (state.supplyItems || []).forEach((item) => {
-    const date = item.updatedAt || todayISO();
-    const price = itemPrice(item);
-    const exists = history.some(
-      (p) =>
-        String(p.itemId || "") === String(item.id) &&
-        Number(p.price) === price &&
-        (p.date || "") === date
-    );
-    if (exists) return;
-    history.push({
-      id: "live-" + item.id,
-      itemId: item.id,
-      itemName: item.itemName,
-      type: item.type,
-      unit: item.unit,
-      supplierId: item.supplierId,
-      supplierName: supplierById(item.supplierId)?.name || item.supplierName || "",
-      price,
-      date,
-    });
-  });
-  return history;
-}
-
-function chartVendors() {
-  const list = (state.suppliers || []).slice();
-  const ids = new Set(list.map((s) => String(s.id)));
-  chartHistory().forEach((p) => {
-    if (!p.supplierId || ids.has(String(p.supplierId))) return;
-    ids.add(String(p.supplierId));
-    list.push({ id: p.supplierId, name: p.supplierName || p.supplierId });
-  });
-  return list;
-}
-
 function chartsTabVisible() {
   return (
     document.getElementById("app")?.classList.contains("visible") &&
@@ -1071,8 +1129,9 @@ function monthLabel(monthNum) {
 
 let archiveYear = null;
 let archiveMonth = null;
-let vendorChart;
-let compareChart;
+let consumptionChart;
+let consumptionClinic = "ahmed";
+let warehouseView = "dental";
 
 function supplyRows(items, includeStock) {
   return items.map((item) => {
@@ -1111,7 +1170,7 @@ function supplyItemHeaders(includeStock) {
 function renderSupplyCategory() {
   const dentalTable = document.getElementById("table-dental");
   const emergencyTable = document.getElementById("table-emergency");
-  if (dentalTable) dentalTable.innerHTML = table(supplyItemHeaders(true), supplyRows(state.supplyItems.filter(isDental).filter((item) => matchesCatalogName(item.itemName, "dental")), true));
+  if (dentalTable) dentalTable.innerHTML = table(supplyItemHeaders(true), supplyRows(state.supplyItems.filter(isDental).filter((item) => itemWarehouse(item) === "dental").filter((item) => matchesCatalogName(item.itemName, "dental")), true));
   if (emergencyTable) emergencyTable.innerHTML = table(supplyItemHeaders(false), supplyRows(state.supplyItems.filter(isEmergency).filter((item) => matchesCatalogName(item.itemName, "emergency")), false));
 }
 
@@ -1312,11 +1371,40 @@ function warehouseDrafts() {
   return drafts;
 }
 
+function warehouseAddForm(kind) {
+  if (!canSeePrices()) return "";
+  const supplierOptions = `<option value="">${t("selectVendor")}</option>` + state.suppliers.map((supplier) => `<option value="${escapeAttr(supplier.id)}">${escapeAttr(supplier.name)}</option>`).join("");
+  const note = kind !== "dental" && state.warehouseKindReady === false ? `<div class="clinic-alert">${t("warehouseKindNeedSql")}</div>` : "";
+  return `${note}<div class="card"><h3>${t("addItem")} — ${escapeAttr(warehouseName(kind))}</h3>
+    <form class="form-grid" id="warehouse-add-form">
+      <input type="hidden" name="warehouse" value="${escapeAttr(kind)}" />
+      <div><label>${t("itemName")}</label><input name="itemName" required /></div>
+      <div><label>${t("unitSize")}</label><input name="unit" required /></div>
+      <div><label>${t("itemType")}</label><input name="type" required /></div>
+      <div><label>${t("vendor")}</label><select name="supplierId">${supplierOptions}</select></div>
+      <div><label>${t("price")}</label><input name="price" data-list-price type="number" min="0" step="0.01" required /></div>
+      <div><label>${t("actualPrice")}</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" /><p class="field-hint">${t("actualPriceHint")}</p></div>
+      <div><label>${t("stockQty")}</label><input name="stock" type="number" min="0" step="1" required /></div>
+      <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" required /></div>
+      <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
+      <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
+    </form>
+  </div>`;
+}
+
 function renderWarehouse() {
   const box = document.getElementById("warehouse-table");
   if (!box) return;
+  const tabs = document.getElementById("warehouse-tabs");
+  const panel = document.getElementById("warehouse-panel");
+  const hint = document.getElementById("warehouse-hint");
+  if (tabs) {
+    tabs.innerHTML = WAREHOUSES.map((entry) => `<button class="subnav-btn ${warehouseView === entry.id ? "active" : ""}" type="button" data-warehouse="${entry.id}">${escapeAttr(warehouseName(entry.id))}</button>`).join("");
+  }
+  if (hint) hint.textContent = t(warehouseView === "general" ? "generalWarehouseHint" : warehouseView === "medical" ? "medicalWarehouseHint" : "dentalWarehouseHint");
+  if (panel) panel.innerHTML = warehouseAddForm(warehouseView);
   const drafts = warehouseDrafts();
-  const items = state.supplyItems.filter(isDental).filter((item) => matchesCatalogName(item.itemName, "warehouse"));
+  const items = state.supplyItems.filter(isDental).filter((item) => itemWarehouse(item) === warehouseView).filter((item) => matchesCatalogName(item.itemName, "warehouse"));
   if (!canSeePrices()) {
     const available = items.filter((item) => {
       const stock = trackedStock(item);
@@ -1358,13 +1446,16 @@ function renderWarehouse() {
         <input data-stock-input="${item.id}" type="number" min="0" step="1" value="${escapeAttr(stockValue)}" style="max-width:110px" />
       </td>
       <td>
+        <button class="btn btn-sm btn-navy" type="button" data-edit-item="${escapeAttr(item.id)}">${t("edit")}</button>
         <button class="btn btn-sm btn-primary" type="button" data-save-stock="${escapeAttr(item.id)}">${t("saveStock")}</button>
         <button class="btn btn-sm btn-danger" type="button" data-del-item="${escapeAttr(item.id)}">${t("deleteVendor")}</button>
         ${notice}
       </td>
     </tr>`;
   });
-  box.innerHTML = `<h3>${t("warehouse")}</h3>${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("minStock"), t("expiryDate"), t("damaged"), t("saveStock"), ""], rows)}`;
+  const sqlNote = warehouseView !== "dental" && state.warehouseKindReady === false ? `<div class="clinic-alert">${t("warehouseKindNeedSql")}</div>` : "";
+  box.innerHTML = `<h3>${escapeAttr(warehouseName(warehouseView))}</h3>${sqlNote}${table([t("itemName"), t("unitSize"), t("itemType"), t("stockQty"), t("minStock"), t("expiryDate"), t("damaged"), t("saveStock"), ""], rows)}`;
+  bindActualPriceFields();
 }
 
 function renderPriceDiffs() {
@@ -1585,7 +1676,9 @@ function bindProductCombo(combo) {
 
   function matchingProducts() {
     const query = normalizeSearchText(input.value);
-    return allProducts().filter((product) => {
+    const clinicId = combo.closest("[data-withdraw-form]")?.dataset.withdrawForm || "";
+    const pool = clinicId ? productsForClinic(clinicId) : allProducts().filter((product) => isDental(product));
+    return pool.filter((product) => {
       if (!query) return true;
       return normalizeSearchText(productChoiceLabel(product)).includes(query);
     });
@@ -2023,90 +2116,116 @@ function renderArchivePrices() {
   );
 }
 
+function renderArchiveInputs() {
+  const box = document.getElementById("archive-inputs-table");
+  if (!box) return;
+  const note = state.warehouseInputsMissing ? `<div class="clinic-alert">${t("warehouseKindNeedSql")}</div>` : "";
+  const rows = (state.warehouseInputs || []).map((row) => `<tr>
+    <td>${escapeAttr(row.date)}</td>
+    <td>${escapeAttr(warehouseName(row.warehouse))}</td>
+    <td>${escapeAttr(row.productName)}</td>
+    <td>${escapeAttr(row.unit)}</td>
+    <td>${Number(row.quantity) || 0}</td>
+  </tr>`);
+  box.innerHTML = `${note}<h3>${t("inputsArchive")}</h3><p class="empty">${t("inputsHint")}</p>${rows.length ? table([t("date"), t("warehouse"), t("itemName"), t("unitSize"), t("quantity")], rows) : `<p class="empty">${t("noData")}</p>`}`;
+}
+
+function consumptionRows(clinicId) {
+  const dispenses = (state.dispenses || []).filter((row) => row.clinicId === clinicId);
+  const names = new Map();
+  dispenses.forEach((row) => names.set(itemNameKey(row.productName), row));
+  clinicRows(clinicId).forEach((row) => {
+    if (!names.has(itemNameKey(row.productName))) names.set(itemNameKey(row.productName), row);
+  });
+  return [...names.values()].map((sample) => {
+    const key = itemNameKey(sample.productName);
+    const related = dispenses.filter((row) => itemNameKey(row.productName) === key);
+    const week = related.filter((row) => inRange(row.date, 7));
+    const month = related.filter((row) => inRange(row.date, 30));
+    const weekQty = week.reduce((sum, row) => sum + Number(row.quantity), 0);
+    const monthQty = month.reduce((sum, row) => sum + Number(row.quantity), 0);
+    const weekValue = week.reduce((sum, row) => sum + Number(row.quantity) * Number(row.unitPrice), 0);
+    const monthValue = month.reduce((sum, row) => sum + Number(row.quantity) * Number(row.unitPrice), 0);
+    const held = clinicRows(clinicId)
+      .filter((row) => itemNameKey(row.productName) === key)
+      .reduce((sum, row) => sum + Number(row.quantity), 0);
+    const days = weekQty > 0 ? Math.max(0, Math.round(held / (weekQty / 7))) : null;
+    return { name: sample.productName, held, weekQty, monthQty, weekValue, monthValue, days };
+  }).sort((a, b) => b.monthQty - a.monthQty || a.name.localeCompare(b.name, "ar"));
+}
+
 function renderArchiveCharts() {
-  if (typeof Chart === "undefined") return;
-  if (!document.getElementById("app")?.classList.contains("visible")) return;
-  const vendorSel = document.getElementById("chart-vendor");
-  if (!vendorSel) return;
-  const current = vendorSel.value;
-  vendorSel.innerHTML = `<option value="">${t("selectVendor")}</option>` + chartVendors().map((s) => `<option value="${s.id}">${s.name}</option>`).join("");
-  if (current) vendorSel.value = current;
-  drawVendorChart(vendorSel.value);
-  drawCompareChart();
-  if (chartsTabVisible()) {
-    requestAnimationFrame(() => {
-      vendorChart?.resize();
-      compareChart?.resize();
-    });
-  }
+  const box = document.getElementById("archive-charts-print");
+  if (!box || !canSeePrices()) return;
+  const clinicId = CLINICS.some((clinic) => clinic.id === consumptionClinic) ? consumptionClinic : CLINICS[0].id;
+  consumptionClinic = clinicId;
+  const tabs = CLINICS.map((clinic) => `<button class="subnav-btn ${clinic.id === clinicId ? "active" : ""}" type="button" data-consumption-clinic="${clinic.id}">${escapeAttr(clinicName(clinic.id))}</button>`).join("");
+  const withdrawals = (state.withdrawals || []).filter((row) => row.clinicId === clinicId);
+  const shares = new Map();
+  withdrawals.forEach((row) => {
+    const key = row.productName || "";
+    shares.set(key, (shares.get(key) || 0) + (Number(row.quantity) || 0));
+  });
+  const labels = [...shares.keys()];
+  const usage = consumptionRows(clinicId);
+  const usageRows = usage.map((row) => `<tr>
+    <td>${escapeAttr(row.name)}</td>
+    <td>${row.held}</td>
+    <td>${row.weekQty}</td>
+    <td>${row.monthQty}</td>
+    <td>${row.days == null ? t("noDispenseRate") : row.days}</td>
+    <td>${row.weekValue} ${t("currency")}</td>
+    <td>${row.monthValue} ${t("currency")}</td>
+  </tr>`);
+  const archive = (state.dispenses || [])
+    .filter((row) => row.clinicId === clinicId)
+    .map((row) => `<tr>
+      <td>${escapeAttr(row.date)}</td>
+      <td>${escapeAttr(row.productName)}</td>
+      <td>${Number(row.quantity) || 0}</td>
+      <td>${(Number(row.quantity) || 0) * (Number(row.unitPrice) || 0)} ${t("currency")}</td>
+      <td class="archive-delete-col"><button class="btn btn-sm btn-danger" type="button" data-del-dispense="${escapeAttr(row.id)}">${t("deleteVendor")}</button></td>
+    </tr>`);
+  const note = state.dispensesMissing ? `<div class="clinic-alert">${t("warehouseKindNeedSql")}</div>` : "";
+  box.innerHTML = `${note}
+    <div class="subnav">${tabs}</div>
+    <div class="consumption-layout">
+      <div class="card">
+        <h3>${t("pieWithdrawals")} — ${escapeAttr(clinicName(clinicId))}</h3>
+        <canvas id="consumption-chart" height="220"></canvas>
+      </div>
+      <div class="card table-wrap">
+        <h3>${t("dispense")}</h3>
+        ${usageRows.length ? table([t("itemName"), t("onHand"), t("weeklyDispense"), t("monthlyDispense"), t("expectedDays"), t("weeklyValue"), t("monthlyValue")], usageRows) : `<p class="empty">${t("noData")}</p>`}
+      </div>
+    </div>
+    <div class="card table-wrap">
+      <h3>${t("consumptionArchive")}</h3>
+      ${archive.length ? table([t("date"), t("itemName"), t("quantity"), t("amount"), ""], archive) : `<p class="empty">${t("noData")}</p>`}
+    </div>`;
+  drawConsumptionChart(labels, labels.map((label) => shares.get(label)));
+}
+
+function drawConsumptionChart(labels, values) {
+  const canvas = document.getElementById("consumption-chart");
+  if (!canvas || typeof Chart === "undefined") return;
+  if (consumptionChart) consumptionChart.destroy();
+  const colors = chartColors();
+  consumptionChart = new Chart(canvas, {
+    type: "pie",
+    data: {
+      labels: labels.length ? labels : [t("noData")],
+      datasets: [{
+        data: values.length ? values : [1],
+        backgroundColor: (labels.length ? labels : [""]).map((_, index) => colors[index % colors.length]),
+      }],
+    },
+    options: { responsive: true, plugins: { legend: { position: "bottom" } } },
+  });
 }
 
 function chartColors() {
   return ["#0d6e6e", "#c9a227", "#0b2c3d", "#1b8a5a", "#c47a12", "#5b717a", "#b42318"];
-}
-
-function drawVendorChart(supplierId) {
-  const canvas = document.getElementById("chart-vendor-canvas");
-  if (!canvas) return;
-  if (vendorChart) vendorChart.destroy();
-  const history = chartHistory().filter((p) => !supplierId || String(p.supplierId) === String(supplierId));
-  const names = [...new Set(history.map((p) => p.itemName).filter(Boolean))];
-  const dates = [...new Set(history.map((p) => p.date).filter(Boolean))].sort();
-  const colors = chartColors();
-  const datasets = names.map((name, i) => {
-    const points = dates.map((d) => {
-      const rec = history.filter((p) => p.itemName === name && p.date <= d).sort((a, b) => b.date.localeCompare(a.date))[0];
-      return rec ? rec.price : null;
-    });
-    return {
-      label: name,
-      data: points,
-      borderColor: colors[i % colors.length],
-      backgroundColor: colors[i % colors.length],
-      spanGaps: true,
-      tension: 0.2,
-    };
-  });
-  vendorChart = new Chart(canvas, {
-    type: "line",
-    data: { labels: dates.length ? dates : [todayISO()], datasets: datasets.length ? datasets : [{ label: t("noData"), data: [0], borderColor: "#d7e4e7" }] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true } },
-    },
-  });
-}
-
-function drawCompareChart() {
-  const canvas = document.getElementById("chart-compare-canvas");
-  if (!canvas) return;
-  if (compareChart) compareChart.destroy();
-  const history = chartHistory();
-  const names = [...new Set(history.map((p) => p.itemName).filter(Boolean))];
-  const colors = chartColors();
-  const vendors = chartVendors();
-  const datasets = vendors.map((s, i) => ({
-    label: s.name,
-    backgroundColor: colors[i % colors.length],
-    data: names.map((name) => {
-      const rec = history
-        .filter((p) => p.itemName === name && String(p.supplierId) === String(s.id))
-        .sort((a, b) => b.date.localeCompare(a.date))[0];
-      return rec ? rec.price : 0;
-    }),
-  }));
-  compareChart = new Chart(canvas, {
-    type: "bar",
-    data: { labels: names.length ? names : [t("noData")], datasets: datasets.length ? datasets : [{ label: t("noData"), data: [0], backgroundColor: "#d7e4e7" }] },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { position: "bottom" } },
-      scales: { y: { beginAtZero: true } },
-    },
-  });
 }
 
 function activityStamp(iso) {
@@ -2128,6 +2247,8 @@ function activityActionLabel(action) {
     request_save: "actRequestSave",
     withdrawal_add: "actWithdrawalAdd",
     withdrawal_delete: "actWithdrawalDelete",
+    dispense: "actDispense",
+    dispense_delete: "actDispenseDelete",
     supply_add: "actSupplyAdd",
     supply_update: "actSupplyUpdate",
     supply_delete: "actSupplyDelete",
@@ -2231,6 +2352,7 @@ function renderArchive() {
   }
   renderArchiveWithdrawals();
   renderArchivePrices();
+  renderArchiveInputs();
   renderArchiveCharts();
   renderActivityLog();
 }
@@ -2318,6 +2440,19 @@ function renderStaffAlerts() {
     : `<p class="empty">${t("clinicAlertClear")}</p>`;
 }
 
+function dispenseForm(clinicId) {
+  const rows = clinicRows(clinicId);
+  if (!rows.length) return "";
+  const options = rows.map((row) => `<option value="${escapeAttr(row.id)}">${escapeAttr(row.productName)} — ${Number(row.quantity) || 0}</option>`).join("");
+  const note = state.dispensesMissing ? `<div class="clinic-alert">${t("warehouseKindNeedSql")}</div>` : "";
+  return `${note}<form class="form-grid" data-dispense-form="${escapeAttr(clinicId)}">
+    <div><label>${t("itemName")}</label><select name="stockId" required>${options}</select></div>
+    <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
+    <div><label>${t("date")}</label><input name="date" type="date" value="${todayISO()}" required /></div>
+    <div class="full"><button class="btn btn-primary" type="submit">${t("dispense")}</button></div>
+  </form>`;
+}
+
 function renderClinicStock() {
   const title = document.getElementById("clinic-stock-title");
   const panel = document.getElementById("clinic-stock-panel");
@@ -2339,7 +2474,7 @@ function renderClinicStock() {
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
       </div>
-      <div class="card table-wrap"><h3>${escapeAttr(clinicName(sessionClinic()))}</h3>${rows.length ? clinicTable(rows) : `<p class="empty">${t("noData")}</p>`}</div>`;
+      <div class="card table-wrap"><h3>${escapeAttr(clinicName(sessionClinic()))}</h3>${dispenseForm(sessionClinic())}${rows.length ? clinicTable(rows) : `<p class="empty">${t("noData")}</p>`}</div>`;
     renderStaffAlerts();
     return;
   }
@@ -2351,6 +2486,7 @@ function renderClinicStock() {
     return `<div class="card table-wrap">
       <h3>${escapeAttr(clinicName(clinic.id))}</h3>
       <p><button class="btn btn-sm btn-navy" type="button" data-print-clinic="${escapeAttr(clinic.id)}">${t("print")}</button></p>
+      ${dispenseForm(clinic.id)}
       ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
       ${rows.length ? clinicTable(rows, true) : `<p class="empty">${t("noData")}</p>`}
     </div>`;
@@ -2369,6 +2505,100 @@ function printClinicStock(clinicId) {
     })
     .join("");
   printHtml(inner, clinicId && clinicId !== "all" ? clinicName(clinicId) : t("clinicStocks"));
+}
+
+async function submitDispense(form) {
+  const clinicId = form.dataset.dispenseForm;
+  if (isStaff() && clinicId !== sessionClinic()) return;
+  if (!isStaff() && !isManager()) return;
+  const data = new FormData(form);
+  const stock = (state.clinicStock || []).find((row) => String(row.id) === String(data.get("stockId")) && row.clinicId === clinicId);
+  const quantity = Number(data.get("quantity"));
+  if (!stock || !Number.isFinite(quantity) || quantity < 1) return;
+  if (quantity > Number(stock.quantity)) {
+    alert(t("insufficientStock"));
+    return;
+  }
+  const catalog = (state.supplyItems || []).find((item) => String(item.id) === String(stock.productId) || itemNameKey(item.itemName) === itemNameKey(stock.productName));
+  const reduced = await changeClinicStock(clinicId, stock.productId, stock.expiryDate || "", -quantity, {
+    productName: stock.productName,
+    unit: stock.unit || "",
+  });
+  if (!reduced) return;
+  const saved = await insertDispense({
+    clinicId,
+    productId: stock.productId,
+    productName: stock.productName,
+    quantity,
+    unitPrice: catalog ? paidPrice(catalog) : 0,
+    date: String(data.get("date") || todayISO()),
+  });
+  if (saved.missing) {
+    state.dispensesMissing = true;
+    await changeClinicStock(clinicId, stock.productId, stock.expiryDate || "", quantity, { productName: stock.productName, unit: stock.unit || "" });
+    alert(t("warehouseKindNeedSql"));
+    persist();
+    return;
+  }
+  if (saved.error || !saved.row) {
+    await changeClinicStock(clinicId, stock.productId, stock.expiryDate || "", quantity, { productName: stock.productName, unit: stock.unit || "" });
+    notifyDbError(saved.error);
+    return;
+  }
+  if (!Array.isArray(state.dispenses)) state.dispenses = [];
+  state.dispenses.unshift(saved.row);
+  await recordActivity("dispense", `${clinicName(clinicId)} — ${stock.productName} — ${quantity}`);
+  persist();
+}
+
+async function removeDispense(id) {
+  if (!isManager()) return;
+  const row = (state.dispenses || []).find((item) => String(item.id) === String(id));
+  if (!row || !confirm(t("confirmDeleteWithdrawal"))) return;
+  const existing = (state.clinicStock || []).find((item) => item.clinicId === row.clinicId && String(item.productId) === String(row.productId));
+  const expiry = existing?.expiryDate || "";
+  const restored = await changeClinicStock(row.clinicId, row.productId, expiry, Number(row.quantity) || 0, { productName: row.productName, unit: existing?.unit || "" });
+  if (!restored) return;
+  const result = await deleteDispense(row.id);
+  if (result.error) {
+    await changeClinicStock(row.clinicId, row.productId, expiry, -(Number(row.quantity) || 0), { productName: row.productName, unit: existing?.unit || "" });
+    notifyDbError(result.error);
+    return;
+  }
+  state.dispenses = (state.dispenses || []).filter((item) => String(item.id) !== String(id));
+  await recordActivity("dispense_delete", `${clinicName(row.clinicId)} — ${row.productName} — ${row.quantity}`);
+  persist();
+}
+
+async function createDepartmentAccounts() {
+  if (!isAdmin()) return;
+  const password = document.getElementById("admin-pass")?.value || "";
+  if (!/^\d{6}$/.test(password)) {
+    alert(t("passwordRule"));
+    return;
+  }
+  const lines = [];
+  for (const spec of DEPARTMENT_ACCOUNTS) {
+    const label = `${clinicName(spec.clinicId)} — ${spec.staffKind === "nurse" ? t("roleNurse") : t("roleDoctor")}`;
+    const result = await manageAppUser({
+      p_actor: state.session?.username || "",
+      p_password: password,
+      p_action: "create",
+      p_role: "staff",
+      p_clinic_id: spec.clinicId,
+      p_staff_kind: spec.staffKind,
+    });
+    if (result?.ok) {
+      lines.push(`<p><strong>${escapeAttr(label)}</strong><br>${t("username")}: ${escapeAttr(result.username)}<br>${t("password")}: ${escapeAttr(result.password)}</p>`);
+      await recordActivity("user_create", `${result.username} — ${label}`);
+    } else if (/staff_limit/.test(result?.message || "")) {
+      lines.push(`<p>${escapeAttr(label)}: ${escapeAttr(t("staffLimit"))}</p>`);
+    } else {
+      lines.push(`<p>${escapeAttr(label)}: ${escapeAttr(userAdminMessage(result?.message || result?.error))}</p>`);
+    }
+  }
+  const box = document.getElementById("user-admin-result");
+  if (box) box.innerHTML = `<div class="card"><h3>${t("newAccount")}</h3>${lines.join("")}<p>${t("passwordOnce")}</p></div>`;
 }
 
 async function addClinicStockItem(form) {
@@ -2458,8 +2688,10 @@ function requestChoices(kind) {
       .filter((item) => Number(item.stock) > 0)
       .map((item) => ({ value: item.id, label: itemChoiceLabel(item), max: "" }));
   }
+  const allowed = new Set(clinicWarehouses(sessionClinic()));
   return state.supplyItems
     .filter(isDental)
+    .filter((item) => !sessionClinic() || allowed.has(itemWarehouse(item)))
     .filter((item) => {
       if (kind !== "internal") return true;
       const stock = trackedStock(item);
@@ -2844,7 +3076,12 @@ function userAdminHtml() {
         <select name="staffKind"><option value="doctor">${t("roleDoctor")}</option><option value="nurse">${t("roleNurse")}</option></select>
       </div>
       <div class="full"><button class="btn btn-primary" type="submit">${t("addUser")}</button></div>
-    </form>`;
+    </form>
+    <div class="card">
+      <h3>${t("createDepartmentUsers")}</h3>
+      <p>${t("departmentUsersHint")}</p>
+      <button class="btn btn-navy" type="button" id="create-department-users">${t("createDepartmentUsers")}</button>
+    </div>`;
 }
 
 let externalQtyNotice = null;
@@ -2926,6 +3163,7 @@ async function syncExternalStockToWarehouse(item, { preserveQuantity = false, ap
     expiryDate: applyQuantity ? item.expiryDate || "" : preserveQuantity && existing ? existing.expiryDate || "" : "",
     damaged: preserveQuantity && existing ? existing.damaged === true : false,
     minStock: (preserveQuantity || applyQuantity) && existing && existing.minStock != null ? existing.minStock : item.minStock,
+    warehouse: "dental",
   };
   const result = await updateSupply(mirror, state.suppliers);
   if (result.error || !result.row) return { ok: false, error: result.error || t("dbSaveError") };
@@ -2985,6 +3223,7 @@ async function saveExternalSupplyDetails(id) {
   const stock = Number(row.querySelector("[data-external-stock]")?.value);
   if (!Number.isFinite(stock) || stock < 0) return;
   const previousStock = item.stock;
+  const previousWarehouseStock = trackedStock((state.supplyItems || []).find((entry) => String(entry.sourceId) === String(item.id) || String(entry.id) === String(item.id)));
   const previousExpiry = item.expiryDate || "";
   const expiryDate = row.querySelector("[data-external-expiry]")?.value || "";
   item.stock = stock;
@@ -3023,6 +3262,9 @@ async function saveExternalSupplyDetails(id) {
     stock: storedStock,
     expiry: storedExpiry,
   };
+  const mirror = (state.supplyItems || []).find((entry) => String(entry.sourceId) === String(item.id) || String(entry.id) === String(item.id));
+  const added = storedStock - (previousWarehouseStock == null ? 0 : Number(previousWarehouseStock));
+  if (mirror && added > 0) await recordWarehouseInput(mirror, added);
   if (Number(previousStock) !== storedStock || previousExpiry !== storedExpiry) {
     await recordActivity("external_update", `${item.itemName} — ${storedStock}${storedExpiry ? ` — ${storedExpiry}` : ""}`);
   }
@@ -3585,9 +3827,28 @@ document.querySelectorAll("[data-catalog-search]").forEach((input) => {
   });
 });
 document.getElementById("activity-account").addEventListener("change", renderActivityLog);
-document.getElementById("chart-vendor").addEventListener("change", () => {
-  drawVendorChart(document.getElementById("chart-vendor").value);
-  drawCompareChart();
+document.getElementById("page-warehouse").addEventListener("click", (e) => {
+  const tab = e.target.closest("[data-warehouse]");
+  if (!tab) return;
+  warehouseView = tab.dataset.warehouse;
+  renderWarehouse();
+});
+
+document.getElementById("page-warehouse").addEventListener("submit", async (e) => {
+  if (e.target.id !== "warehouse-add-form") return;
+  e.preventDefault();
+  await addWarehouseItem(e.target);
+});
+
+document.getElementById("page-archive").addEventListener("click", (e) => {
+  const clinicBtn = e.target.closest("[data-consumption-clinic]");
+  if (clinicBtn) {
+    consumptionClinic = clinicBtn.dataset.consumptionClinic;
+    renderArchiveCharts();
+    return;
+  }
+  const remove = e.target.closest("[data-del-dispense]");
+  if (remove) removeDispense(remove.dataset.delDispense);
 });
 
 function warehouseRowValues(row, includeStock) {
@@ -3612,6 +3873,76 @@ function queueWarehouseSave(row, includeStock) {
   const previous = warehouseSaveChain.get(item.id) || Promise.resolve();
   const run = previous.then(() => writeWarehouseRow(item, values));
   warehouseSaveChain.set(item.id, run.catch(() => {}));
+}
+
+async function recordWarehouseInput(item, quantity) {
+  const amount = Number(quantity);
+  if (!item || !Number.isFinite(amount) || amount <= 0) return;
+  const saved = await insertWarehouseInput({
+    warehouse: itemWarehouse(item),
+    productId: item.id,
+    productName: item.itemName,
+    unit: item.unit || "",
+    quantity: amount,
+    date: todayISO(),
+  });
+  if (saved.missing) {
+    state.warehouseInputsMissing = true;
+    return;
+  }
+  if (saved.error || !saved.row) {
+    notifyDbError(saved.error);
+    return;
+  }
+  if (!Array.isArray(state.warehouseInputs)) state.warehouseInputs = [];
+  state.warehouseInputs.unshift(saved.row);
+}
+
+async function addWarehouseItem(form) {
+  if (!isManager()) return;
+  const data = new FormData(form);
+  const warehouse = String(data.get("warehouse") || "dental");
+  if (warehouse !== "dental") {
+    const ready = await ensureDentalWarehouseKindColumn();
+    state.warehouseKindReady = ready;
+    if (!ready) {
+      alert(t("warehouseKindNeedSql"));
+      return;
+    }
+  }
+  const item = {
+    category: "dental",
+    warehouse,
+    itemName: String(data.get("itemName") || "").trim(),
+    unit: String(data.get("unit") || "").trim(),
+    type: String(data.get("type") || "").trim(),
+    supplierId: data.get("supplierId"),
+    price: Number(data.get("price")) || 0,
+    actualPrice: readPaidPrice(data.get("actualPrice"), data.get("price")),
+    stock: Number(data.get("stock")),
+    minStock: alertThreshold(data.get("minStock")),
+    expiryDate: data.get("expiryDate") || "",
+    damaged: false,
+    updatedAt: todayISO(),
+  };
+  if (!item.itemName || !item.unit || !item.type || !Number.isFinite(item.stock) || item.stock < 0) return;
+  const result = await insertSupply(item, state.suppliers);
+  if (result.error || !result.row) {
+    notifyDbError(result.error);
+    return;
+  }
+  if (!result.row.warehouse) result.row.warehouse = warehouse;
+  if (result.row.expiryDate === undefined) result.row.expiryDate = item.expiryDate;
+  if (result.row.minStock === undefined) result.row.minStock = item.minStock;
+  if (result.row.actualPrice === undefined) result.row.actualPrice = item.actualPrice;
+  state.supplyItems.unshift(result.row);
+  await logPrice(result.row);
+  if (item.stock > 0) await recordWarehouseInput(result.row, item.stock);
+  await recordActivity("supply_add", `${warehouseName(warehouse)} — ${item.itemName}`);
+  if (result.minStockSkipped) alert(t("minStockNeedSql"));
+  if (result.actualPriceSkipped) alert(t("actualPriceNeedSql"));
+  form.reset();
+  persist();
 }
 
 async function writeWarehouseRow(item, values) {
@@ -3643,7 +3974,11 @@ async function writeWarehouseRow(item, values) {
     return;
   }
   warehouseNotice = { id: item.id, text: t("warehouseExpirySaved") };
-  if (values.stock !== undefined) warehouseStockDirty.delete(String(item.id));
+  if (values.stock !== undefined) {
+    warehouseStockDirty.delete(String(item.id));
+    const added = Number(item.stock) - (previous.stock == null ? 0 : Number(previous.stock));
+    if (added > 0) await recordWarehouseInput(item, added);
+  }
   await recordActivity("stock_save", `${item.itemName} — ${item.expiryDate || t("noExpiry")}`);
   persist();
 }
@@ -3797,6 +4132,12 @@ document.getElementById("page-requests").addEventListener("submit", async (e) =>
 });
 
 document.getElementById("page-clinic-stock").addEventListener("submit", async (e) => {
+  const dispense = e.target.closest("[data-dispense-form]");
+  if (dispense) {
+    e.preventDefault();
+    await submitDispense(dispense);
+    return;
+  }
   if (e.target.id !== "clinic-stock-form") return;
   e.preventDefault();
   await addClinicStockItem(e.target);
@@ -3867,6 +4208,7 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
       minStock: form.dataset.supplyForm === "emergency" ? undefined : alertThreshold(data.get("minStock")),
       expiryDate: form.dataset.supplyForm === "emergency" ? "" : data.get("expiryDate") || "",
       damaged: form.dataset.supplyForm === "emergency" ? false : data.get("damaged") === "on",
+      warehouse: "dental",
       updatedAt: todayISO(),
     };
     const result = await insertSupply(item, state.suppliers);
@@ -3878,8 +4220,10 @@ document.querySelectorAll("[data-supply-form]").forEach((form) => {
     if (result.row.damaged === undefined) result.row.damaged = item.damaged === true;
     if (result.row.minStock === undefined) result.row.minStock = item.minStock;
     if (result.row.actualPrice === undefined) result.row.actualPrice = item.actualPrice;
+    if (!result.row.warehouse) result.row.warehouse = item.warehouse || "dental";
     state.supplyItems.unshift(result.row);
     await logPrice(result.row);
+    if (item.category !== "emergency" && Number(item.stock) > 0) await recordWarehouseInput(result.row, Number(item.stock));
     await recordActivity("supply_add", item.itemName);
     if (result.minStockSkipped) alert(t("minStockNeedSql"));
     if (result.actualPriceSkipped) alert(t("actualPriceNeedSql"));
@@ -3939,6 +4283,10 @@ document.getElementById("modal").addEventListener("click", async (e) => {
     if (listed.error) alert(userAdminMessage(listed.error));
     else renderUserTable(listed.users);
   }
+});
+document.getElementById("modal").addEventListener("click", async (e) => {
+  if (e.target.id !== "create-department-users") return;
+  await createDepartmentAccounts();
 });
 document.getElementById("modal").addEventListener("change", (e) => {
   if (e.target.id !== "new-user-role") return;
@@ -4209,6 +4557,11 @@ async function hydrateFromDatabase() {
   state.cleaningItems = cloudList(result.cleaningInventory);
   state.cleaningWithdrawals = cloudList(result.cleaningWithdrawals);
   state.cleaningMissing = Boolean(result.cleaningInventory?.missing || result.cleaningWithdrawals?.missing);
+  state.warehouseInputs = cloudList(result.warehouseInputs);
+  state.dispenses = cloudList(result.dispenses);
+  state.warehouseInputsMissing = Boolean(result.warehouseInputs?.missing);
+  state.dispensesMissing = Boolean(result.dispenses?.missing);
+  state.warehouseKindReady = await ensureDentalWarehouseKindColumn();
   state.suppliers = result.vendors || [];
 
   renderAll();
@@ -4253,14 +4606,12 @@ function printArchive(kind) {
     printHtml(clone ? clone.innerHTML : "", t("archivePrices"));
     return;
   }
-  const vendorCanvas = document.getElementById("chart-vendor-canvas");
-  const compareCanvas = document.getElementById("chart-compare-canvas");
-  const vendorImg = vendorCanvas ? `<img src="${vendorCanvas.toDataURL("image/png")}" style="width:100%;max-width:900px" />` : "";
-  const compareImg = compareCanvas ? `<img src="${compareCanvas.toDataURL("image/png")}" style="width:100%;max-width:900px" />` : "";
-  printHtml(
-    `<h3>${t("chartByVendor")}</h3>${vendorImg}<h3>${t("chartCompare")}</h3>${compareImg}`,
-    t("archiveCharts")
-  );
+  const box = document.getElementById("archive-charts-print");
+  const clone = box ? box.cloneNode(true) : null;
+  clone?.querySelectorAll(".archive-delete-col, button").forEach((el) => el.remove());
+  const canvas = document.getElementById("consumption-chart");
+  const image = canvas ? `<img src="${canvas.toDataURL("image/png")}" style="width:100%;max-width:420px" />` : "";
+  printHtml(`${image}${clone ? clone.innerHTML : ""}`, t("archiveCharts"));
 }
 
 async function loadHospitalDataFromCloud() {

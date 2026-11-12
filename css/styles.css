@@ -608,6 +608,15 @@ th { color: var(--muted); font-size: 0.85rem; }
 .badge-danger { background: #fde8e6; color: #b42318; }
 .stock-low { color: #b42318; font-weight: 800; }
 
+.consumption-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 380px) 1fr;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 800px) {
+  .consumption-layout { grid-template-columns: 1fr; }
+}
 #archive-charts canvas {
   width: 100% !important;
   height: 280px !important;
