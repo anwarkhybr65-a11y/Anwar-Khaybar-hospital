@@ -45,10 +45,10 @@ const CLINICS = [
   { id: "ahmed", ar: "عيادة دكتور أحمد", en: "Dr. Ahmed clinic", letter: "أ", color: "#0d6e6e", warehouses: ["dental", "general"] },
   { id: "faten", ar: "عيادة دكتورة فاتن", en: "Dr. Faten clinic", letter: "ف", color: "#0b2c3d", warehouses: ["dental", "general"] },
   { id: "sara", ar: "عيادة دكتورة سارة", en: "Dr. Sarah clinic", letter: "س", color: "#c9a227", warehouses: ["dental", "general"] },
-  { id: "emergency", ar: "مخزون الطوارئ", en: "Emergency stock", letter: "ط", color: "#b42318", warehouses: ["general"] },
-  { id: "lab", ar: "مخزون المختبر", en: "Laboratory stock", letter: "م", color: "#1d4e89", warehouses: ["medical", "general"] },
-  { id: "obgyn", ar: "مخزون عيادة النساء والولادة", en: "Obstetrics and gynecology stock", letter: "ن", color: "#7a3e6d", warehouses: ["medical", "general"] },
-  { id: "internal", ar: "مخزون الباطنة", en: "Internal medicine stock", letter: "ب", color: "#0f6e56", warehouses: ["medical", "general"] },
+  { id: "emergency", ar: "عيادة الطوارئ", en: "Emergency clinic", letter: "ط", color: "#b42318", warehouses: ["medical", "general"] },
+  { id: "lab", ar: "المختبر", en: "Laboratory", letter: "م", color: "#1d4e89", warehouses: ["medical", "general"] },
+  { id: "obgyn", ar: "عيادة النساء والولادة", en: "Obstetrics and gynecology clinic", letter: "ن", color: "#7a3e6d", warehouses: ["medical", "general"] },
+  { id: "internal", ar: "عيادة الباطنة", en: "Internal medicine clinic", letter: "ب", color: "#0f6e56", warehouses: ["medical", "general"] },
 ];
 
 const WAREHOUSES = [
@@ -101,7 +101,7 @@ const I18N = {
     warehouseHint: "كميات مستلزمات الأسنان المتاحة. أي سحب من العيادات يخصم من هذه الكمية.",
     dentalWarehouseHint: "مستودع الأسنان. عيادات الأسنان تسحب منه، ويمكنها أيضاً السحب من المستودع العام.",
     generalWarehouseHint: "مستلزمات مشتركة لكل العيادات. أي سحب من هذا المستودع يخصم من كميته.",
-    medicalWarehouseHint: "مستودع المختبر والباطنة والنساء والولادة. السحب يخصم من هذه الكمية.",
+    medicalWarehouseHint: "مستودع المختبر والباطنة والنساء والولادة والطوارئ. السحب يخصم من هذه الكمية.",
     warehouseKindNeedSql: "لتفعيل المستودعات الجديدة وسجل المدخلات والصرف، شغّل ملف sql/add_departments.sql مرة واحدة ثم أعد تحميل الصفحة.",
     inputsArchive: "المدخلات",
     inputsHint: "كل كمية تُضاف إلى أحد المستودعات تُسجل هنا.",
@@ -387,7 +387,7 @@ const I18N = {
     warehouseHint: "Available dental supply quantities. Clinic withdrawals are deducted from this stock.",
     dentalWarehouseHint: "Dental warehouse. Dental clinics withdraw from it, and they can also withdraw shared items from the general warehouse.",
     generalWarehouseHint: "Supplies shared by every clinic. A withdrawal reduces this quantity.",
-    medicalWarehouseHint: "Warehouse for the laboratory, internal medicine, and obstetrics. A withdrawal reduces this quantity.",
+    medicalWarehouseHint: "Warehouse for the laboratory, internal medicine, obstetrics, and emergency. A withdrawal reduces this quantity.",
     warehouseKindNeedSql: "To enable the new warehouses, the input log, and dispensing, run sql/add_departments.sql once, then reload the page.",
     inputsArchive: "Inputs",
     inputsHint: "Every quantity added to a warehouse is recorded here.",
@@ -1106,7 +1106,7 @@ async function logPrice(item) {
     notifyDbError(saved.error);
     return;
   }
-  state.priceHistory.unshift(saved.row);
+    state.priceHistory.unshift(saved.row);
 }
 
 function chartsTabVisible() {
@@ -1796,9 +1796,9 @@ function bindWithdrawForms() {
           }
         }
         result = await insertWithdrawal(row);
-        if (result.error) {
+      if (result.error) {
           if (product && isDental(product)) await adjustDentalStock(product, row.quantity);
-          notifyDbError(result.error);
+        notifyDbError(result.error);
           return;
         }
       } else if (result.error) {
@@ -2409,10 +2409,14 @@ function clinicAlertLines(row) {
 }
 
 function clinicTable(rows, allowDelete) {
-  const headers = [t("itemName"), t("unitSize"), t("quantity"), t("minStock"), t("expiryDate"), t("daysLeft")];
+  const showLimit = !isStaff();
+  const headers = [t("itemName"), t("unitSize"), t("quantity")];
+  if (showLimit) headers.push(t("minStock"));
+  headers.push(t("expiryDate"), t("daysLeft"));
   if (canSeePrices()) headers.push(t("price"));
   if (allowDelete) headers.push("");
   const body = rows.map((row) => {
+    const limit = showLimit ? `<td>${clinicAlertLimit(row)}</td>` : "";
     const price = canSeePrices() ? `<td>${catalogPrice(row.productId)}</td>` : "";
     const remove = allowDelete
       ? `<td><button class="btn btn-sm btn-danger" type="button" data-del-clinic="${escapeAttr(row.id)}">${t("deleteVendor")}</button></td>`
@@ -2421,7 +2425,7 @@ function clinicTable(rows, allowDelete) {
       <td>${escapeAttr(row.productName)}</td>
       <td>${escapeAttr(row.unit)}</td>
       <td class="${isBelowStockAlert(row.quantity, clinicAlertLimit(row)) ? "stock-low" : ""}">${row.quantity}</td>
-      <td>${clinicAlertLimit(row)}</td>
+      ${limit}
       <td>${escapeAttr(row.expiryDate || t("noExpiry"))}</td>
       <td>${daysLabel(row.expiryDate)}</td>
       ${price}
@@ -2474,7 +2478,6 @@ function renderClinicStock() {
           <div><label>${t("itemName")}</label><input name="itemName" required /></div>
           <div><label>${t("unitSize")}</label><input name="unit" required /></div>
           <div><label>${t("quantity")}</label><input name="quantity" type="number" min="1" step="1" required /></div>
-          <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" required /></div>
           <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
@@ -2610,15 +2613,14 @@ async function addClinicStockItem(form) {
   const productName = String(data.get("itemName") || "").trim();
   const unit = String(data.get("unit") || "").trim();
   const quantity = Number(data.get("quantity"));
-  const minStock = alertThreshold(data.get("minStock"));
   const expiryDate = String(data.get("expiryDate") || "");
   if (!productName || !unit || !Number.isFinite(quantity) || quantity < 1) return;
-  if (!Number.isFinite(Number(data.get("minStock"))) || Number(data.get("minStock")) < 0) return;
   const clinicId = sessionClinic();
   const catalog = (state.supplyItems || []).find((item) => itemNameKey(item.itemName) === itemNameKey(productName));
   const existing = (state.clinicStock || []).find(
     (row) => row.clinicId === clinicId && itemNameKey(row.productName) === itemNameKey(productName) && (row.expiryDate || "") === expiryDate
   );
+  const minStock = existing?.minStock != null && existing.minStock !== "" ? alertThreshold(existing.minStock) : alertThreshold(catalog?.minStock);
   const productId = existing?.productId || catalog?.id || crypto.randomUUID();
   const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, { productName, unit: existing?.unit || unit, minStock });
   if (!added) return;
