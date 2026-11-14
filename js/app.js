@@ -378,6 +378,8 @@ const I18N = {
     newAccount: "بيانات الحساب الجديد",
     passwordOnce: "تبقى كلمة المرور ظاهرة في جدول الحسابات.",
     passwordMissing: "غير محفوظة",
+    savePassword: "حفظ",
+    loginFixSql: "شغّل ملف sql/fix_login_password.sql مرة واحدة ثم أعد تحميل الصفحة.",
     adminLimit: "لا يمكن إضافة أكثر من مسؤولين اثنين.",
     deputyLimit: "يوجد نائب واحد بالفعل.",
     staffLimit: "هذه الوظيفة موجودة مسبقاً لهذه العيادة.",
@@ -677,6 +679,8 @@ const I18N = {
     newAccount: "New account",
     passwordOnce: "The password stays visible in the account table.",
     passwordMissing: "Not saved",
+    savePassword: "Save",
+    loginFixSql: "Run sql/fix_login_password.sql once, then reload the page.",
     adminLimit: "There can be only two admins.",
     deputyLimit: "A deputy already exists.",
     staffLimit: "This clinic already has that staff role.",
@@ -2140,6 +2144,10 @@ function closeModal() {
   document.getElementById("modal").classList.remove("open");
 }
 
+function asciiDigits(value) {
+  return String(value || "").replace(/[٠-٩]/g, (digit) => String("٠١٢٣٤٥٦٧٨٩".indexOf(digit))).trim();
+}
+
 function escapeAttr(value) {
   return String(value || "")
     .replace(/&/g, "&amp;")
@@ -3266,6 +3274,8 @@ function userAdminMessage(code) {
   if (/deputy_limit/.test(text)) return t("deputyLimit");
   if (/staff_limit/.test(text)) return t("staffLimit");
   if (/username_taken/.test(text)) return t("usernameTaken");
+  if (/invalid_password/.test(text)) return t("passwordRule");
+  if (/invalid_action/.test(text)) return t("loginFixSql");
   if (/admin_required/.test(text)) return t("loginError");
   if (/schema cache|Could not find the function/i.test(text)) return t("packNeedSql");
   if (/list_app_users|manage_app_user/i.test(text)) return t("usersNeedSql");
@@ -3280,15 +3290,16 @@ function renderUserTable(users, notice = "") {
     const clinic = user.clinicId ? clinicName(user.clinicId) : "";
     const banLabel = user.banned ? t("unbanUser") : t("banUser");
     const action = user.banned ? "unban" : "ban";
-    const savedPassword = String(user.password || "").trim();
+    const savedPassword = asciiDigits(user.password || "");
     return `<tr>
       <td>${escapeAttr(user.username)}</td>
-      <td>${escapeAttr(savedPassword || t("passwordMissing"))}</td>
+      <td><input class="user-pass-input" data-user-pass value="${escapeAttr(savedPassword)}" inputmode="numeric" maxlength="6" placeholder="${escapeAttr(t("passwordMissing"))}"></td>
       <td>${escapeAttr(role)}</td>
       <td>${escapeAttr(clinic)}</td>
       <td>${user.banned ? t("accountBanned") : t("accepted")}</td>
       <td>
         <button class="btn btn-sm btn-danger" type="button" data-user-action="${action}" data-user-target="${escapeAttr(user.username)}">${banLabel}</button>
+        <button class="btn btn-sm btn-navy" type="button" data-user-action="setpass" data-user-target="${escapeAttr(user.username)}">${t("savePassword")}</button>
         <button class="btn btn-sm btn-navy" type="button" data-user-action="reset" data-user-target="${escapeAttr(user.username)}">${t("resetPassword")}</button>
       </td>
     </tr>`;
@@ -3914,7 +3925,7 @@ document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const form = e.currentTarget;
   const user = document.getElementById("login-user").value.trim();
-  const pass = document.getElementById("login-pass").value;
+  const pass = asciiDigits(document.getElementById("login-pass").value);
   if (!user || !pass) return;
   if (!/^\d{6}$/.test(pass)) {
     alert(t("passwordRule"));
@@ -4541,27 +4552,40 @@ document.getElementById("modal").addEventListener("click", async (e) => {
   if (e.target.id === "modal") closeModal();
   const userBtn = e.target.closest("[data-user-action]");
   if (!userBtn) return;
-  const password = document.getElementById("admin-pass")?.value || "";
+  const password = asciiDigits(document.getElementById("admin-pass")?.value || "");
   if (!/^\d{6}$/.test(password)) {
     alert(t("passwordRule"));
     return;
   }
   const action = userBtn.dataset.userAction;
   const target = userBtn.dataset.userTarget;
-  if (target === state.session?.username) return;
+  if (action !== "setpass" && target === state.session?.username) return;
+  const nextPassword = action === "setpass"
+    ? asciiDigits(userBtn.closest("tr")?.querySelector("[data-user-pass]")?.value || "")
+    : "";
+  if (action === "setpass" && !/^\d{6}$/.test(nextPassword)) {
+    alert(t("passwordRule"));
+    return;
+  }
   const result = await manageAppUser({
     p_actor: state.session?.username || "",
     p_password: password,
-    p_action: action,
+    p_action: action === "setpass" ? "set_password" : action,
     p_target: target,
+    p_username: nextPassword,
   });
   if (result.error || result.ok === false) {
     alert(userAdminMessage(result.message || result.error));
     return;
   }
-  const userAction = action === "ban" ? "user_ban" : action === "unban" ? "user_unban" : action === "reset" ? "user_reset" : "";
+  const userAction = action === "ban" ? "user_ban" : action === "unban" ? "user_unban" : action === "reset" || action === "setpass" ? "user_reset" : "";
   if (userAction) await recordActivity(userAction, target);
-  await refreshUserTable(password);
+  const listPassword = action === "setpass" && target === state.session?.username ? nextPassword : password;
+  if (listPassword !== password) {
+    const adminPass = document.getElementById("admin-pass");
+    if (adminPass) adminPass.value = listPassword;
+  }
+  await refreshUserTable(listPassword);
 });
 document.getElementById("modal").addEventListener("click", async (e) => {
   if (e.target.id !== "apply-login-names") return;

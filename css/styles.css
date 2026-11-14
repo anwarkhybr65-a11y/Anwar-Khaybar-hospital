@@ -463,6 +463,7 @@ th { color: var(--muted); font-size: 0.85rem; }
 .form-grid .full { grid-column: 1 / -1; }
 .pack-inputs { display: flex; gap: 4px; }
 .pack-inputs input { min-width: 0; padding: 8px; }
+.user-pass-input { width: 7.5rem; padding: 6px 8px; }
 .combo { position: relative; }
 .combo-list {
   position: absolute;
