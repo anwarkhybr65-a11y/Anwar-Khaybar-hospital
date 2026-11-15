@@ -15,6 +15,7 @@ import {
   insertWithdrawal,
   insertWithdrawalLog,
   listAppUsers,
+  listLoginAccounts,
   loadProcurementData,
   loginUser,
   manageAppUser,
@@ -109,11 +110,14 @@ const I18N = {
     piecesPerBox: "حبات العلبة الواحدة",
     boxQty: "الكمية بالعلب",
     pieceQty: "الكمية بالحبات",
+    pieceQtyHint: "تُحسب تلقائياً من ضرب حبات العلبة في عدد العلب.",
     pieces: "حبات",
     applyLoginNames: "تثبيت أسماء الدخول",
     loginNamesHint: "يثبت الأسماء الظاهرة في شاشة الدخول. الحساب الموجود يحتفظ بكلمة مروره، والحساب الجديد تظهر كلمة مروره مرة واحدة.",
     loginNamesReady: "الأسماء جاهزة. الحسابات الموجودة احتفظت بكلمات مرورها.",
     usernameTaken: "اسم الدخول مستخدم لحساب آخر.",
+    saveUsername: "حفظ الاسم",
+    usernameEmpty: "اكتب اسم المستخدم.",
     packNeedSql: "شغّل ملف sql/add_pack_and_login_names.sql مرة واحدة حتى يُحفظ عدد حبات العلبة وأسماء الدخول.",
     password: "كلمة المرور",
     login: "تسجيل الدخول",
@@ -252,6 +256,7 @@ const I18N = {
     actUserBan: "حظر حساب",
     actUserUnban: "إلغاء حظر حساب",
     actUserReset: "تغيير كلمة مرور حساب",
+    actUserRename: "تغيير اسم مستخدم",
     searchItems: "ابحث عن صنف...",
     chartByVendor: "تغيّر الأسعار لكل مورد",
     chartCompare: "مقارنة أسعار الموردين",
@@ -410,11 +415,14 @@ const I18N = {
     piecesPerBox: "Pieces in one box",
     boxQty: "Quantity in boxes",
     pieceQty: "Quantity in pieces",
+    pieceQtyHint: "Calculated automatically as pieces per box times the number of boxes.",
     pieces: "pieces",
     applyLoginNames: "Apply login names",
     loginNamesHint: "Sets the names shown on the login screen. An existing account keeps its password. A new account shows its password once.",
     loginNamesReady: "The names are ready. Existing accounts kept their passwords.",
     usernameTaken: "That login name is already used by another account.",
+    saveUsername: "Save name",
+    usernameEmpty: "Enter the username.",
     packNeedSql: "Run sql/add_pack_and_login_names.sql once so the pieces per box and the login names can be saved.",
     password: "Password",
     login: "Sign in",
@@ -553,6 +561,7 @@ const I18N = {
     actUserBan: "Ban account",
     actUserUnban: "Unban account",
     actUserReset: "Reset account password",
+    actUserRename: "Rename account",
     searchItems: "Search items...",
     chartByVendor: "Price changes per supplier",
     chartCompare: "Supplier price comparison",
@@ -882,11 +891,43 @@ function packSize(value) {
   return Number.isFinite(count) && count > 0 ? count : 1;
 }
 
+function pieceCount(boxes, perBox) {
+  return Math.max(0, Math.floor(Number(boxes) || 0)) * packSize(perBox);
+}
+
 function totalPieces(boxes, pieces, perBox) {
-  const per = packSize(perBox);
-  const boxCount = Math.max(0, Math.floor(Number(boxes) || 0));
-  const pieceCount = Math.max(0, Math.floor(Number(pieces) || 0));
-  return boxCount * per + pieceCount;
+  return pieceCount(boxes, perBox);
+}
+
+function packFromScope(scope) {
+  const packInput = scope.querySelector("[data-pack-input], [name=piecesPerBox]");
+  if (packInput) return packInput.value;
+  const form = scope.matches?.("form") ? scope : scope.closest("form");
+  if (form?.dataset.withdrawForm) {
+    const id = form.querySelector('[name="productName"]')?.value;
+    const product = (state.supplyItems || []).find((item) => String(item.id) === String(id));
+    return product?.piecesPerBox;
+  }
+  if (form?.dataset.dispenseForm) {
+    const stock = (state.clinicStock || []).find((row) => String(row.id) === String(form.querySelector('[name="stockId"]')?.value) && row.clinicId === form.dataset.dispenseForm);
+    return rowPack(stock);
+  }
+  return 1;
+}
+
+function syncPieceQty(scope) {
+  if (!scope) return;
+  const pieces = scope.querySelector("[data-pieces-input], [name=pieces]");
+  const boxes = scope.querySelector("[data-boxes-input], [name=boxes]");
+  if (!pieces || !boxes) return;
+  pieces.readOnly = true;
+  pieces.value = String(pieceCount(boxes.value, packFromScope(scope)));
+}
+
+function syncAllPieceQty(root = document) {
+  root.querySelectorAll("form, #warehouse-table tr").forEach((scope) => {
+    if (scope.querySelector("[name=pieces], [data-pieces-input]")) syncPieceQty(scope);
+  });
 }
 
 function splitPieces(total, perBox) {
@@ -926,11 +967,43 @@ function loginPlaceLabel(place) {
   return clinicName(place.id);
 }
 
+let liveLoginUsers = null;
+
+function loginPlaces() {
+  if (!liveLoginUsers?.length) return LOGIN_PLACES;
+  const groups = new Map();
+  liveLoginUsers.forEach((user) => {
+    const placeId = user.role === "staff" && user.clinicId ? user.clinicId : "office";
+    if (!groups.has(placeId)) groups.set(placeId, []);
+    groups.get(placeId).push({
+      username: user.username,
+      ar: user.username,
+      en: user.username,
+      role: user.role || "admin",
+      staffKind: user.staffKind || "",
+    });
+  });
+  const order = LOGIN_PLACES.map((place) => place.id);
+  return [...groups.keys()]
+    .sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)))
+    .map((id) => {
+      const known = LOGIN_PLACES.find((place) => place.id === id);
+      return known ? { ...known, users: groups.get(id) } : { id, users: groups.get(id) };
+    });
+}
+
+async function refreshLoginAccounts() {
+  const listed = await listLoginAccounts();
+  if (listed.error || !listed.users?.length) return;
+  liveLoginUsers = listed.users;
+  if (!state.session) fillLoginChoices();
+}
+
 function fillLoginUsers() {
   const clinic = document.getElementById("login-clinic");
   const user = document.getElementById("login-user");
   if (!clinic || !user) return;
-  const place = LOGIN_PLACES.find((entry) => entry.id === clinic.value);
+  const place = loginPlaces().find((entry) => entry.id === clinic.value);
   const previous = user.value;
   const users = place?.users || [];
   user.innerHTML = `<option value="">${escapeAttr(t("selectUser"))}</option>` + users
@@ -942,11 +1015,12 @@ function fillLoginUsers() {
 function fillLoginChoices() {
   const clinic = document.getElementById("login-clinic");
   if (!clinic) return;
+  const places = loginPlaces();
   const previous = clinic.value;
-  clinic.innerHTML = `<option value="">${escapeAttr(t("selectClinic"))}</option>` + LOGIN_PLACES
+  clinic.innerHTML = `<option value="">${escapeAttr(t("selectClinic"))}</option>` + places
     .map((place) => `<option value="${escapeAttr(place.id)}">${escapeAttr(loginPlaceLabel(place))}</option>`)
     .join("");
-  if (LOGIN_PLACES.some((place) => place.id === previous)) clinic.value = previous;
+  if (places.some((place) => place.id === previous)) clinic.value = previous;
   fillLoginUsers();
 }
 
@@ -1530,7 +1604,7 @@ function warehouseAddForm(kind) {
       <div><label>${t("actualPrice")}</label><input name="actualPrice" data-actual-price type="number" min="0" step="0.01" /><p class="field-hint">${t("actualPriceHint")}</p></div>
       <div><label>${t("piecesPerBox")}</label><input name="piecesPerBox" type="number" min="1" step="1" value="1" required /></div>
       <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
-      <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
+      <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" readonly /><p class="field-hint">${t("pieceQtyHint")}</p></div>
       <div><label>${t("minStock")}</label><input name="minStock" type="number" min="0" step="1" required /></div>
       <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
       <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
@@ -1574,13 +1648,14 @@ function renderWarehouse() {
     const expiryValue = draft ? draft.expiry : item.expiryDate || "";
     const damaged = draft ? draft.damaged : item.damaged === true;
     const split = splitPieces(stock, item.piecesPerBox);
-    const savedKey = `${split.boxes}|${split.pieces}|${packSize(item.piecesPerBox)}`;
+    const savedPieces = pieceCount(split.boxes, item.piecesPerBox);
+    const savedKey = `${split.boxes}|${savedPieces}|${packSize(item.piecesPerBox)}`;
     if (warehouseStockDirty.get(String(item.id)) === savedKey) warehouseStockDirty.delete(String(item.id));
     const dirty = warehouseStockDirty.get(String(item.id));
-    const [dirtyBoxes, dirtyPieces, dirtyPack] = dirty ? String(dirty).split("|") : [];
+    const [dirtyBoxes, , dirtyPack] = dirty ? String(dirty).split("|") : [];
     const boxesValue = dirty ? dirtyBoxes : String(split.boxes);
-    const piecesValue = dirty ? dirtyPieces : String(split.pieces);
     const packValue = dirty ? dirtyPack : String(packSize(item.piecesPerBox));
+    const piecesValue = String(pieceCount(boxesValue, packValue));
     warehouseInputShown.set(String(item.id), dirty || savedKey);
     const notice = warehouseNotice && String(warehouseNotice.id) === String(item.id)
       ? `<div class="qty-saved">${escapeAttr(warehouseNotice.text)}</div>`
@@ -1597,7 +1672,7 @@ function renderWarehouse() {
         <div class="pack-inputs">
           <input data-pack-input type="number" min="1" step="1" value="${escapeAttr(packValue)}" title="${escapeAttr(t("piecesPerBox"))}" placeholder="${escapeAttr(t("piecesPerBox"))}" />
           <input data-boxes-input type="number" min="0" step="1" value="${escapeAttr(boxesValue)}" title="${escapeAttr(t("boxQty"))}" placeholder="${escapeAttr(t("boxes"))}" />
-          <input data-pieces-input type="number" min="0" step="1" value="${escapeAttr(piecesValue)}" title="${escapeAttr(t("pieceQty"))}" placeholder="${escapeAttr(t("pieces"))}" />
+          <input data-pieces-input type="number" min="0" step="1" value="${escapeAttr(piecesValue)}" title="${escapeAttr(t("pieceQtyHint"))}" placeholder="${escapeAttr(t("pieces"))}" readonly />
         </div>
       </td>
       <td>
@@ -1758,7 +1833,7 @@ function renderWithdrawals() {
             <div><label>${t("itemName")}</label>${productComboHtml()}</div>
             <div><label>${t("date")}</label><input name="date" type="date" value="${todayISO()}" required /></div>
             <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
-            <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
+            <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" readonly /><p class="field-hint">${t("pieceQtyHint")}</p></div>
             <div><label>${t("requester")}</label><input name="requester" required /></div>
             <div class="full"><button class="btn btn-primary" type="submit">${t("addWithdrawal")}</button></div>
           </form>
@@ -1855,6 +1930,7 @@ function bindProductCombo(combo) {
     hidden.value = product.id;
     input.value = productChoiceLabel(product);
     list.hidden = true;
+    syncPieceQty(combo.closest("form"));
   }
 
   input.addEventListener("focus", renderList);
@@ -2432,6 +2508,7 @@ function activityActionLabel(action) {
     user_ban: "actUserBan",
     user_unban: "actUserUnban",
     user_reset: "actUserReset",
+    user_rename: "actUserRename",
   }[action];
   return key ? t(key) : action;
 }
@@ -2614,7 +2691,7 @@ function dispenseForm(clinicId) {
   return `${note}<form class="form-grid" data-dispense-form="${escapeAttr(clinicId)}">
     <div><label>${t("itemName")}</label><select name="stockId" required>${options}</select></div>
     <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
-    <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
+    <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" readonly /><p class="field-hint">${t("pieceQtyHint")}</p></div>
     <div><label>${t("date")}</label><input name="date" type="date" value="${todayISO()}" required /></div>
     <div class="full"><button class="btn btn-primary" type="submit">${t("dispense")}</button></div>
   </form>`;
@@ -2637,7 +2714,7 @@ function renderClinicStock() {
           <div><label>${t("unitSize")}</label><input name="unit" required /></div>
           <div><label>${t("piecesPerBox")}</label><input name="piecesPerBox" type="number" min="1" step="1" value="1" required /></div>
           <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
-          <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" /></div>
+          <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" readonly /><p class="field-hint">${t("pieceQtyHint")}</p></div>
           <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
           <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
         </form>
@@ -3292,12 +3369,13 @@ function renderUserTable(users, notice = "") {
     const action = user.banned ? "unban" : "ban";
     const savedPassword = asciiDigits(user.password || "");
     return `<tr>
-      <td>${escapeAttr(user.username)}</td>
+      <td><input class="user-name-input" data-user-name value="${escapeAttr(user.username)}"></td>
       <td><input class="user-pass-input" data-user-pass value="${escapeAttr(savedPassword)}" inputmode="numeric" maxlength="6" placeholder="${escapeAttr(t("passwordMissing"))}"></td>
       <td>${escapeAttr(role)}</td>
       <td>${escapeAttr(clinic)}</td>
       <td>${user.banned ? t("accountBanned") : t("accepted")}</td>
       <td>
+        <button class="btn btn-sm btn-navy" type="button" data-user-action="rename" data-user-target="${escapeAttr(user.username)}">${t("saveUsername")}</button>
         <button class="btn btn-sm btn-danger" type="button" data-user-action="${action}" data-user-target="${escapeAttr(user.username)}">${banLabel}</button>
         <button class="btn btn-sm btn-navy" type="button" data-user-action="setpass" data-user-target="${escapeAttr(user.username)}">${t("savePassword")}</button>
         <button class="btn btn-sm btn-navy" type="button" data-user-action="reset" data-user-target="${escapeAttr(user.username)}">${t("resetPassword")}</button>
@@ -3917,7 +3995,19 @@ function renderAll() {
   renderCleaning();
   renderCleaningWithdrawals();
   bindActualPriceFields();
+  syncAllPieceQty();
 }
+
+document.addEventListener("input", (e) => {
+  const field = e.target.closest("[name=boxes], [name=piecesPerBox], [data-boxes-input], [data-pack-input]");
+  if (!field) return;
+  syncPieceQty(field.closest("form, tr"));
+});
+document.addEventListener("change", (e) => {
+  const field = e.target.closest("[name=stockId]");
+  if (!field) return;
+  syncPieceQty(field.closest("form"));
+});
 
 document.getElementById("login-clinic")?.addEventListener("change", fillLoginUsers);
 
@@ -4559,27 +4649,45 @@ document.getElementById("modal").addEventListener("click", async (e) => {
   }
   const action = userBtn.dataset.userAction;
   const target = userBtn.dataset.userTarget;
-  if (action !== "setpass" && target === state.session?.username) return;
+  if (action !== "setpass" && action !== "rename" && target === state.session?.username) return;
   const nextPassword = action === "setpass"
     ? asciiDigits(userBtn.closest("tr")?.querySelector("[data-user-pass]")?.value || "")
+    : "";
+  const nextName = action === "rename"
+    ? userBtn.closest("tr")?.querySelector("[data-user-name]")?.value.trim() || ""
     : "";
   if (action === "setpass" && !/^\d{6}$/.test(nextPassword)) {
     alert(t("passwordRule"));
     return;
   }
+  if (action === "rename" && !nextName) {
+    alert(t("usernameEmpty"));
+    return;
+  }
+  if (action === "rename" && nextName === target) return;
   const result = await manageAppUser({
     p_actor: state.session?.username || "",
     p_password: password,
     p_action: action === "setpass" ? "set_password" : action,
     p_target: target,
-    p_username: nextPassword,
+    p_username: action === "setpass" ? nextPassword : nextName,
   });
   if (result.error || result.ok === false) {
     alert(userAdminMessage(result.message || result.error));
     return;
   }
-  const userAction = action === "ban" ? "user_ban" : action === "unban" ? "user_unban" : action === "reset" || action === "setpass" ? "user_reset" : "";
-  if (userAction) await recordActivity(userAction, target);
+  if (action === "rename" && state.session?.username === target) {
+    state.session.username = result.username || nextName;
+    state.session.letter = state.session.username.slice(0, 1);
+    const nameEl = document.getElementById("user-name");
+    const initialEl = document.getElementById("user-initial");
+    if (nameEl) nameEl.textContent = state.session.username;
+    if (initialEl) initialEl.textContent = state.session.letter;
+    save(state);
+  }
+  const userAction = action === "ban" ? "user_ban" : action === "unban" ? "user_unban" : action === "reset" || action === "setpass" ? "user_reset" : action === "rename" ? "user_rename" : "";
+  if (userAction) await recordActivity(userAction, action === "rename" ? `${target} → ${nextName}` : target);
+  if (action === "rename") refreshLoginAccounts();
   const listPassword = action === "setpass" && target === state.session?.username ? nextPassword : password;
   if (listPassword !== password) {
     const adminPass = document.getElementById("admin-pass");
@@ -4933,5 +5041,6 @@ async function startSession() {
 }
 
 applyI18n();
+refreshLoginAccounts();
 if (state.session) startSession();
 else showApp(false);

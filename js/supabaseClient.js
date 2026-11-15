@@ -1144,6 +1144,12 @@ export async function loginUser(username, password) {
   };
 }
 
+export async function listLoginAccounts() {
+  const { data, error } = await supabase.rpc("list_login_accounts");
+  if (error) return { users: null, error: error.message };
+  return { users: Array.isArray(data) ? data : [], error: null };
+}
+
 export async function listAppUsers(actor, password) {
   const { data, error } = await supabase.rpc("list_app_users", {
     p_actor: actor,
