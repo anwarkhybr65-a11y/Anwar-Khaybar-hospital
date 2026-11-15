@@ -284,7 +284,7 @@ const I18N = {
     vendor: "المورد",
     price: "السعر",
     actualPrice: "السعر الفعلي",
-    actualPriceHint: "يتعبأ تلقائياً من السعر. غيّره إذا كان على الصنف تخفيض من المورد.",
+    actualPriceHint: "مرجع للخصومات وتغييرات السعر فقط. سحب الصنف يُحسب من خانة السعر.",
     actualPriceNeedSql: "شغّل ملف sql/add_actual_price.sql مرة واحدة حتى يُحفظ السعر الفعلي.",
     bestPrices: "أفضل الأسعار",
     bestVendor: "أفضل مورد",
@@ -589,7 +589,7 @@ const I18N = {
     vendor: "Supplier",
     price: "Price",
     actualPrice: "Actual price",
-    actualPriceHint: "Filled from the price. Change it when the supplier gives a discount.",
+    actualPriceHint: "Reference only for discounts and price changes. Withdrawals use the price field.",
     actualPriceNeedSql: "Run sql/add_actual_price.sql once so the actual price can be saved.",
     bestPrices: "Best prices",
     bestVendor: "Best supplier",
@@ -1079,6 +1079,11 @@ function paidPrice(item) {
   if (item.actualPrice == null || item.actualPrice === "") return itemPrice(item);
   const value = Number(item.actualPrice);
   return Number.isFinite(value) && value >= 0 ? value : itemPrice(item);
+}
+
+function listUnitPrice(item, perBox) {
+  if (!item) return 0;
+  return itemPrice(item) / packSize(perBox == null ? item.piecesPerBox : perBox);
 }
 
 function readPaidPrice(actual, list) {
@@ -1578,7 +1583,7 @@ async function disposeItem(id) {
     type: item.type,
     supplierName: supplierById(item.supplierId)?.name || item.supplierName || "",
     quantity: qty,
-    unitPrice: paidPrice(item),
+    unitPrice: itemPrice(item),
     reason,
     expiryDate: item.expiryDate || "",
     disposedAt: todayISO(),
@@ -2029,7 +2034,7 @@ function bindWithdrawForms() {
         date: data.get("date"),
         quantity: totalPieces(data.get("boxes"), data.get("pieces"), product?.piecesPerBox),
         requester: data.get("requester").trim(),
-        unitPrice: product ? paidPrice(product) / packSize(product.piecesPerBox) : 0,
+        unitPrice: listUnitPrice(product),
       };
       if (row.quantity < 1) return;
       if (product && isDental(product)) {
@@ -2652,7 +2657,7 @@ function requestStatusLabel(status) {
 function catalogPrice(productId) {
   const item = state.supplyItems.find((row) => String(row.id) === String(productId));
   if (!item) return "—";
-  return `${paidPrice(item)} ${t("currency")}`;
+  return `${itemPrice(item)} ${t("currency")}`;
 }
 
 function clinicAlertLimit(row) {
@@ -2808,7 +2813,7 @@ async function submitDispense(form) {
     productId: stock.productId,
     productName: stock.productName,
     quantity,
-    unitPrice: catalog ? paidPrice(catalog) / per : 0,
+    unitPrice: listUnitPrice(catalog, per),
     date: String(data.get("date") || todayISO()),
   });
   if (saved.missing) {
@@ -3316,7 +3321,7 @@ async function acceptRequest(id) {
       type: product?.type || "",
       supplierName: product ? supplierById(product.supplierId)?.name || "" : "",
       quantity: qty,
-      unitPrice: product ? paidPrice(product) : 0,
+      unitPrice: product ? itemPrice(product) : 0,
       reason: "expired",
       expiryDate: req.expiryDate || "",
       disposedAt: todayISO(),
@@ -3974,7 +3979,7 @@ async function addCleaningWithdrawal(form) {
     unit: item.unit,
     department,
     quantity,
-    unitPrice: paidPrice(item),
+    unitPrice: itemPrice(item),
     date: String(data.get("date") || todayISO()),
   };
   const saved = await saveCleaningWithdrawal(row);
