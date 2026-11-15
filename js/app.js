@@ -930,6 +930,19 @@ function syncAllPieceQty(root = document) {
   });
 }
 
+function rememberRenderedWarehouseInputs() {
+  document.querySelectorAll("#warehouse-table [data-save-stock]").forEach((btn) => {
+    const id = String(btn.dataset.saveStock);
+    if (warehouseStockDirty.has(id)) return;
+    const row = btn.closest("tr");
+    if (!row) return;
+    const boxes = row.querySelector("[data-boxes-input]")?.value ?? "";
+    const pieces = row.querySelector("[data-pieces-input]")?.value ?? "";
+    const pack = row.querySelector("[data-pack-input]")?.value ?? "";
+    warehouseInputShown.set(id, `${boxes}|${pieces}|${pack}`);
+  });
+}
+
 function splitPieces(total, perBox) {
   const per = packSize(perBox);
   const count = Math.max(0, Math.floor(Number(total) || 0));
@@ -1106,6 +1119,21 @@ function trackedStock(item) {
   if (!item || item.stock == null || item.stock === "") return null;
   const value = Number(item.stock);
   return Number.isFinite(value) ? value : null;
+}
+
+function stockAfterMovement(before, fetched, delta) {
+  const start = before == null ? null : Number(before);
+  const read = fetched == null || fetched === "" ? null : Number(fetched);
+  const moved = Number(delta) || 0;
+  if (read != null && Number.isFinite(read) && (start == null || read !== start)) return read;
+  if (start == null || !Number.isFinite(start)) return Number.isFinite(read) ? read : null;
+  return start + moved;
+}
+
+function releaseWarehouseQtyDraft(id) {
+  const key = String(id || "");
+  warehouseStockDirty.delete(key);
+  warehouseInputShown.delete(key);
 }
 
 function alertThreshold(value) {
@@ -1650,6 +1678,8 @@ function renderWarehouse() {
     const split = splitPieces(stock, item.piecesPerBox);
     const savedPieces = pieceCount(split.boxes, item.piecesPerBox);
     const savedKey = `${split.boxes}|${savedPieces}|${packSize(item.piecesPerBox)}`;
+    const shownStock = warehouseShownStock.get(String(item.id));
+    if (shownStock !== undefined && shownStock !== stock) warehouseStockDirty.delete(String(item.id));
     if (warehouseStockDirty.get(String(item.id)) === savedKey) warehouseStockDirty.delete(String(item.id));
     const dirty = warehouseStockDirty.get(String(item.id));
     const [dirtyBoxes, , dirtyPack] = dirty ? String(dirty).split("|") : [];
@@ -1657,6 +1687,7 @@ function renderWarehouse() {
     const packValue = dirty ? dirtyPack : String(packSize(item.piecesPerBox));
     const piecesValue = String(pieceCount(boxesValue, packValue));
     warehouseInputShown.set(String(item.id), dirty || savedKey);
+    warehouseShownStock.set(String(item.id), stock);
     const notice = warehouseNotice && String(warehouseNotice.id) === String(item.id)
       ? `<div class="qty-saved">${escapeAttr(warehouseNotice.text)}</div>`
       : "";
@@ -2036,7 +2067,8 @@ function bindWithdrawForms() {
         else notifyDbError(result.error);
         return;
       } else if (product && isDental(product)) {
-        product.stock = result.stock == null ? trackedStock(product) - row.quantity : Number(result.stock);
+        product.stock = stockAfterMovement(trackedStock(product), result.stock, -row.quantity);
+        releaseWarehouseQtyDraft(product.id);
       }
       const addedToClinic = await changeClinicStock(
         row.clinicId,
@@ -2048,8 +2080,10 @@ function bindWithdrawForms() {
       if (!addedToClinic) {
         await deleteWithdrawal(result.row.id, row.clinicId);
         if (product && isDental(product)) {
+          const before = trackedStock(product);
           const fresh = await fetchDentalStock(product.id);
-          if (fresh.found) product.stock = fresh.stock;
+          product.stock = stockAfterMovement(before, fresh.found ? fresh.stock : null, row.quantity);
+          releaseWarehouseQtyDraft(product.id);
         }
         return;
       }
@@ -2823,7 +2857,7 @@ function namedLoginUsers() {
 
 async function assignNamedAccounts() {
   if (!isAdmin()) return;
-  const password = document.getElementById("admin-pass")?.value || "";
+  const password = asciiDigits(document.getElementById("admin-pass")?.value || "");
   if (!/^\d{6}$/.test(password)) {
     alert(t("passwordRule"));
     return;
@@ -2898,7 +2932,7 @@ async function assignNamedAccounts() {
 
 async function createDepartmentAccounts() {
   if (!isAdmin()) return;
-  const password = document.getElementById("admin-pass")?.value || "";
+  const password = asciiDigits(document.getElementById("admin-pass")?.value || "");
   if (!/^\d{6}$/.test(password)) {
     alert(t("passwordRule"));
     return;
@@ -3442,6 +3476,7 @@ let warehouseNotice = null;
 const warehouseSaveChain = new Map();
 const warehouseInputShown = new Map();
 const warehouseStockDirty = new Map();
+const warehouseShownStock = new Map();
 
 function externalQtyStatus(item) {
   if (!externalQtyNotice || String(externalQtyNotice.id) !== String(item.id)) return "";
@@ -3996,6 +4031,7 @@ function renderAll() {
   renderCleaningWithdrawals();
   bindActualPriceFields();
   syncAllPieceQty();
+  rememberRenderedWarehouseInputs();
 }
 
 document.addEventListener("input", (e) => {
@@ -4710,13 +4746,17 @@ document.getElementById("modal").addEventListener("change", (e) => {
 document.getElementById("modal").addEventListener("submit", async (e) => {
   if (e.target.id === "user-auth-form") {
     e.preventDefault();
-    const password = document.getElementById("admin-pass")?.value || "";
+    const password = asciiDigits(document.getElementById("admin-pass")?.value || "");
+    if (!/^\d{6}$/.test(password)) {
+      alert(t("passwordRule"));
+      return;
+    }
     await refreshUserTable(password);
     return;
   }
   if (e.target.id === "user-create-form") {
     e.preventDefault();
-    const password = document.getElementById("admin-pass")?.value || "";
+    const password = asciiDigits(document.getElementById("admin-pass")?.value || "");
     if (!/^\d{6}$/.test(password)) {
       alert(t("passwordRule"));
       return;
@@ -4872,8 +4912,10 @@ document.addEventListener("click", async (e) => {
       return;
     }
     if (result.fromLog && product && isDental(product)) {
+      const before = trackedStock(product);
       const fresh = await fetchDentalStock(product.id);
-      if (fresh.found) product.stock = fresh.stock;
+      product.stock = stockAfterMovement(before, fresh.found ? fresh.stock : null, Number(withdrawn?.quantity) || 0);
+      releaseWarehouseQtyDraft(product.id);
     } else if (!result.fromLog && product && isDental(product) && trackedStock(product) != null) {
       const stockResult = await adjustDentalStock(product, Number(withdrawn.quantity) || 0);
       if (!stockResult.ok) {
