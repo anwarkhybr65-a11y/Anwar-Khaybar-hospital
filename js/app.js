@@ -340,10 +340,10 @@ const I18N = {
     myClinicStock: "مخزون العيادة",
     addClinicItem: "إضافة صنف موجود في العيادة",
     clinicItemList: "قائمة مخزون العيادات",
-    clinicItemListHint: "اكتب الصنف ثم اختر العيادة. بعد الإضافة لا يستطيع الطاقم إلا تحديد الكمية بالعلبة أو الحبة.",
+    clinicItemListHint: "اكتب الصنف ثم اختر العيادة. بعد الإضافة لا يستطيع الطاقم إلا تحديد الكمية بالعلبة أو الحبة وتاريخ الصلاحية.",
     assignClinic: "إضافة للعيادة",
     clinicItemExists: "هذا الصنف مضاف لهذه العيادة مسبقاً.",
-    staffQtyHint: "حدد الكمية بالعلب. الحبات تُحسب تلقائياً، ولا يمكن إضافة صنف جديد من هنا.",
+    staffQtyHint: "حدد الكمية بالعلب وتاريخ الصلاحية. الحبات تُحسب تلقائياً، ولا يمكن إضافة صنف جديد من هنا.",
     staffNoClinicItems: "لم تُضف أصناف لهذه العيادة بعد. الإضافة من حساب المسؤول أو النائب.",
     externalRequests: "طلبات خارجية",
     externalSupplies: "المستلزمات الخارجية",
@@ -651,10 +651,10 @@ const I18N = {
     myClinicStock: "Clinic inventory",
     addClinicItem: "Add an item already in the clinic",
     clinicItemList: "Clinic item list",
-    clinicItemListHint: "Write the item, choose the clinic, then add it. Clinic staff can only set the quantity in boxes or pieces.",
+    clinicItemListHint: "Write the item, choose the clinic, then add it. Clinic staff can only set the quantity in boxes or pieces and the expiry date.",
     assignClinic: "Add to clinic",
     clinicItemExists: "This item is already assigned to that clinic.",
-    staffQtyHint: "Set the quantity in boxes. Pieces are calculated automatically, and new items cannot be added here.",
+    staffQtyHint: "Set the quantity in boxes and the expiry date. Pieces are calculated automatically, and new items cannot be added here.",
     staffNoClinicItems: "No items have been assigned to this clinic yet. An admin or deputy adds them.",
     externalRequests: "External requests",
     externalSupplies: "External supplies",
@@ -2738,7 +2738,7 @@ function renderStaffAlerts() {
 }
 
 function staffClinicQtyTable(rows) {
-  const headers = [t("itemName"), t("unitSize"), t("piecesPerBox"), t("boxQty"), t("pieceQty"), t("quantity"), ""];
+  const headers = [t("itemName"), t("unitSize"), t("piecesPerBox"), t("boxQty"), t("pieceQty"), t("quantity"), t("expiryDate"), t("daysLeft"), ""];
   const body = rows.map((row) => {
     const pack = rowPack(row);
     const boxes = splitPieces(row.quantity, pack).boxes;
@@ -2752,6 +2752,8 @@ function staffClinicQtyTable(rows) {
       </td>
       <td><input data-pieces-input type="number" min="0" step="1" value="${pieceCount(boxes, pack)}" readonly /></td>
       <td class="${isBelowStockAlert(row.quantity, clinicAlertLimit(row)) ? "stock-low" : ""}">${formatPack(row.quantity, pack)}</td>
+      <td><input data-clinic-expiry type="date" value="${escapeAttr(row.expiryDate || "")}" /></td>
+      <td>${daysLabel(row.expiryDate)}</td>
       <td><button class="btn btn-sm btn-primary" type="button" data-save-clinic-qty="${escapeAttr(row.id)}">${t("saveStock")}</button></td>
     </tr>`;
   });
@@ -3066,17 +3068,25 @@ async function saveStaffClinicQty(id) {
   const tr = document.querySelector(`[data-save-clinic-qty="${CSS.escape(String(id))}"]`)?.closest("tr");
   if (!row || !tr) return;
   const quantity = pieceCount(tr.querySelector("[data-boxes-input]")?.value, rowPack(row));
+  const expiryDate = tr.querySelector("[data-clinic-expiry]")?.value || "";
   if (!Number.isFinite(quantity) || quantity < 0) return;
   const previous = Number(row.quantity) || 0;
+  const previousExpiry = row.expiryDate || "";
   row.quantity = quantity;
+  row.expiryDate = expiryDate;
   const saved = await saveClinicStock(row);
   if (saved?.error) {
     row.quantity = previous;
+    row.expiryDate = previousExpiry;
     notifyDbError(saved.error);
     return;
   }
-  if (saved?.row) Object.assign(row, saved.row, { quantity, piecesPerBox: saved.row.piecesPerBox === undefined ? row.piecesPerBox : saved.row.piecesPerBox });
-  await recordActivity("clinic_stock_add", `${clinicName(sessionClinic())} — ${row.productName} — ${quantity}`);
+  if (saved?.row) Object.assign(row, saved.row, {
+    quantity,
+    expiryDate: saved.row.expiryDate === undefined ? expiryDate : saved.row.expiryDate,
+    piecesPerBox: saved.row.piecesPerBox === undefined ? row.piecesPerBox : saved.row.piecesPerBox,
+  });
+  await recordActivity("clinic_stock_add", `${clinicName(sessionClinic())} — ${row.productName} — ${quantity} — ${row.expiryDate || t("noExpiry")}`);
   persist();
 }
 
