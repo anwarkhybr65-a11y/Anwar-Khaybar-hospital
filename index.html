@@ -41,6 +41,7 @@
       <button class="nav-btn" data-page="cleaning" data-manager-only data-i18n="cleaningWarehouse">مستودع مستلزمات النظافة</button>
       <button class="nav-btn" data-page="cleaning-withdrawals" data-manager-only data-i18n="cleaningWithdrawals">مسحوبات النظافة</button>
       <button class="nav-btn" data-page="archive" data-manager-only data-i18n="archive">أرشيف</button>
+      <button class="nav-btn" data-page="clinic-list" data-manager-only data-i18n="clinicItemList">قائمة مخزون العيادات</button>
     </aside>
 
     <div class="main">
@@ -61,6 +62,7 @@
           <div class="module-grid">
             <button class="module-btn" type="button" data-module="requests"><span class="report-icon">📝</span><span data-i18n="requests">الطلبات</span><span class="module-count" id="request-count" hidden></span></button>
             <button class="module-btn" type="button" data-module="clinic-stock"><span class="report-icon">🏥</span><span data-nav-clinic data-i18n="clinicStocks">مخزون العيادات</span></button>
+            <button class="module-btn" type="button" data-module="clinic-list" data-manager-only><span class="report-icon">📋</span><span data-i18n="clinicItemList">قائمة مخزون العيادات</span></button>
             <button class="module-btn" type="button" data-module="withdrawals"><span class="report-icon">📤</span><span data-nav-withdrawals data-i18n="withdrawals">مسحوبات العيادات</span></button>
             <button class="module-btn" type="button" data-module="warehouse" data-manager-only><span class="report-icon">🏬</span><span data-i18n="warehouses">المستودعات</span></button>
             <button class="module-btn" type="button" data-module="cleaning" data-manager-only><span class="report-icon">🧼</span><span data-i18n="cleaningWarehouse">مستودع مستلزمات النظافة</span></button>
@@ -88,6 +90,12 @@
         <section class="page" id="page-clinic-stock">
           <h2 class="page-title" id="clinic-stock-title" data-i18n="clinicStocks">مخزون العيادات</h2>
           <div id="clinic-stock-panel"></div>
+        </section>
+
+        <section class="page" id="page-clinic-list">
+          <h2 class="page-title" data-i18n="clinicItemList">قائمة مخزون العيادات</h2>
+          <p class="empty" data-i18n="clinicItemListHint">اكتب الصنف ثم اختر العيادة. بعد الإضافة لا يستطيع الطاقم إلا تحديد الكمية بالعلبة أو الحبة.</p>
+          <div id="clinic-list-panel"></div>
         </section>
 
         <section class="page" id="page-withdrawals">

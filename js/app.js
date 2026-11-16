@@ -339,6 +339,12 @@ const I18N = {
     clinicStocks: "مخزون العيادات",
     myClinicStock: "مخزون العيادة",
     addClinicItem: "إضافة صنف موجود في العيادة",
+    clinicItemList: "قائمة مخزون العيادات",
+    clinicItemListHint: "اكتب الصنف ثم اختر العيادة. بعد الإضافة لا يستطيع الطاقم إلا تحديد الكمية بالعلبة أو الحبة.",
+    assignClinic: "إضافة للعيادة",
+    clinicItemExists: "هذا الصنف مضاف لهذه العيادة مسبقاً.",
+    staffQtyHint: "حدد الكمية بالعلب. الحبات تُحسب تلقائياً، ولا يمكن إضافة صنف جديد من هنا.",
+    staffNoClinicItems: "لم تُضف أصناف لهذه العيادة بعد. الإضافة من حساب المسؤول أو النائب.",
     externalRequests: "طلبات خارجية",
     externalSupplies: "المستلزمات الخارجية",
     externalSuppliesHint: "أصناف هذه الصفحة هي التي تظهر عند إنشاء طلب خارجي.",
@@ -644,6 +650,12 @@ const I18N = {
     clinicStocks: "Clinic inventory",
     myClinicStock: "Clinic inventory",
     addClinicItem: "Add an item already in the clinic",
+    clinicItemList: "Clinic item list",
+    clinicItemListHint: "Write the item, choose the clinic, then add it. Clinic staff can only set the quantity in boxes or pieces.",
+    assignClinic: "Add to clinic",
+    clinicItemExists: "This item is already assigned to that clinic.",
+    staffQtyHint: "Set the quantity in boxes. Pieces are calculated automatically, and new items cannot be added here.",
+    staffNoClinicItems: "No items have been assigned to this clinic yet. An admin or deputy adds them.",
     externalRequests: "External requests",
     externalSupplies: "External supplies",
     externalSuppliesHint: "Items on this page are the ones available for an external request.",
@@ -865,7 +877,7 @@ function applyAccess() {
   }
 }
 
-const MANAGER_PAGES = new Set(["supplies", "emergency", "archive", "warehouse", "external", "cleaning", "cleaning-withdrawals"]);
+const MANAGER_PAGES = new Set(["supplies", "emergency", "archive", "warehouse", "external", "cleaning", "cleaning-withdrawals", "clinic-list"]);
 
 function openPage(page) {
   if (state.session && isStaff() && MANAGER_PAGES.has(page)) page = "dashboard";
@@ -2640,6 +2652,10 @@ function clinicRows(clinicId) {
   return (state.clinicStock || []).filter((row) => row.clinicId === clinicId && Number(row.quantity) > 0);
 }
 
+function clinicAssignedRows(clinicId) {
+  return (state.clinicStock || []).filter((row) => row.clinicId === clinicId);
+}
+
 function requestKindLabel(kind) {
   if (kind === "external") return t("externalRequests");
   if (kind === "cleaning") return t("cleaningRequests");
@@ -2721,6 +2737,27 @@ function renderStaffAlerts() {
     : `<p class="empty">${t("clinicAlertClear")}</p>`;
 }
 
+function staffClinicQtyTable(rows) {
+  const headers = [t("itemName"), t("unitSize"), t("piecesPerBox"), t("boxQty"), t("pieceQty"), t("quantity"), ""];
+  const body = rows.map((row) => {
+    const pack = rowPack(row);
+    const boxes = splitPieces(row.quantity, pack).boxes;
+    return `<tr>
+      <td>${escapeAttr(row.productName)}</td>
+      <td>${escapeAttr(row.unit)}</td>
+      <td>${pack}</td>
+      <td>
+        <input data-pack-input type="hidden" value="${pack}" />
+        <input data-boxes-input type="number" min="0" step="1" value="${boxes}" />
+      </td>
+      <td><input data-pieces-input type="number" min="0" step="1" value="${pieceCount(boxes, pack)}" readonly /></td>
+      <td class="${isBelowStockAlert(row.quantity, clinicAlertLimit(row)) ? "stock-low" : ""}">${formatPack(row.quantity, pack)}</td>
+      <td><button class="btn btn-sm btn-primary" type="button" data-save-clinic-qty="${escapeAttr(row.id)}">${t("saveStock")}</button></td>
+    </tr>`;
+  });
+  return table(headers, body);
+}
+
 function dispenseForm(clinicId) {
   if (!isDoctor() || clinicId !== sessionClinic()) return "";
   const rows = clinicRows(clinicId);
@@ -2742,23 +2779,13 @@ function renderClinicStock() {
   if (!panel) return;
   if (isStaff()) {
     if (title) title.textContent = t("myClinicStock");
-    const rows = clinicRows(sessionClinic());
-    const alerts = rows.flatMap(clinicAlertLines);
+    const rows = clinicAssignedRows(sessionClinic());
+    const alerts = clinicRows(sessionClinic()).flatMap(clinicAlertLines);
+    const list = rows.length ? staffClinicQtyTable(rows) : `<p class="empty">${t("staffNoClinicItems")}</p>`;
     panel.innerHTML = `
       ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
-      <div class="card">
-        <h3>${t("addClinicItem")}</h3>
-        <form class="form-grid" id="clinic-stock-form">
-          <div><label>${t("itemName")}</label><input name="itemName" required /></div>
-          <div><label>${t("unitSize")}</label><input name="unit" required /></div>
-          <div><label>${t("piecesPerBox")}</label><input name="piecesPerBox" type="number" min="1" step="1" value="1" required /></div>
-          <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
-          <div><label>${t("pieceQty")}</label><input name="pieces" type="number" min="0" step="1" value="0" readonly /><p class="field-hint">${t("pieceQtyHint")}</p></div>
-          <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
-          <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
-        </form>
-      </div>
-      <div class="card table-wrap"><h3>${escapeAttr(clinicName(sessionClinic()))}</h3>${dispenseForm(sessionClinic())}${rows.length ? clinicTable(rows) : `<p class="empty">${t("noData")}</p>`}</div>`;
+      <p class="empty">${t("staffQtyHint")}</p>
+      <div class="card table-wrap"><h3>${escapeAttr(clinicName(sessionClinic()))}</h3>${dispenseForm(sessionClinic())}${list}</div>`;
     renderStaffAlerts();
     return;
   }
@@ -2775,6 +2802,35 @@ function renderClinicStock() {
     </div>`;
   }).join("");
   renderStaffAlerts();
+}
+
+function renderClinicItemList() {
+  const panel = document.getElementById("clinic-list-panel");
+  if (!panel) return;
+  if (!isManager()) {
+    panel.innerHTML = "";
+    return;
+  }
+  const clinicOptions = CLINICS.map((clinic) => `<option value="${escapeAttr(clinic.id)}">${escapeAttr(clinicName(clinic.id))}</option>`).join("");
+  const lists = CLINICS.map((clinic) => {
+    const rows = clinicAssignedRows(clinic.id);
+    return `<div class="card table-wrap">
+      <h3>${escapeAttr(clinicName(clinic.id))}</h3>
+      ${rows.length ? clinicTable(rows, true) : `<p class="empty">${t("noData")}</p>`}
+    </div>`;
+  }).join("");
+  panel.innerHTML = `
+    <div class="card">
+      <h3>${t("assignClinic")}</h3>
+      <form class="form-grid" id="clinic-list-form">
+        <div><label>${t("itemName")}</label><input name="itemName" required /></div>
+        <div><label>${t("unitSize")}</label><input name="unit" required /></div>
+        <div><label>${t("piecesPerBox")}</label><input name="piecesPerBox" type="number" min="1" step="1" value="1" required /></div>
+        <div><label>${t("clinic")}</label><select name="clinicId" required><option value="">${t("selectClinic")}</option>${clinicOptions}</select></div>
+        <div class="full"><button class="btn btn-primary" type="submit">${t("assignClinic")}</button></div>
+      </form>
+    </div>
+    ${lists}`;
 }
 
 function printClinicStock(clinicId) {
@@ -2966,38 +3022,61 @@ async function createDepartmentAccounts() {
   if (box) box.innerHTML = `<div class="card"><h3>${t("newAccount")}</h3>${lines.join("")}<p>${t("passwordOnce")}</p></div>`;
 }
 
-async function addClinicStockItem(form) {
-  if (!isStaff() || !sessionClinic()) return;
+async function assignClinicItem(form) {
+  if (!isManager()) return;
   const data = new FormData(form);
+  const clinicId = String(data.get("clinicId") || "");
   const productName = String(data.get("itemName") || "").trim();
   const unit = String(data.get("unit") || "").trim();
   const piecesPerBox = packSize(data.get("piecesPerBox"));
-  const quantity = totalPieces(data.get("boxes"), data.get("pieces"), piecesPerBox);
-  const expiryDate = String(data.get("expiryDate") || "");
-  if (!productName || !unit || !Number.isFinite(quantity) || quantity < 1) return;
-  const clinicId = sessionClinic();
+  if (!clinicId || !productName || !unit) return;
   const catalog = (state.supplyItems || []).find((item) => itemNameKey(item.itemName) === itemNameKey(productName));
-  const existing = (state.clinicStock || []).find(
-    (row) => row.clinicId === clinicId && itemNameKey(row.productName) === itemNameKey(productName) && (row.expiryDate || "") === expiryDate
+  const existing = clinicAssignedRows(clinicId).find((row) =>
+    itemNameKey(row.productName) === itemNameKey(productName) || (catalog && String(row.productId) === String(catalog.id))
   );
-  const minStock = existing?.minStock != null && existing.minStock !== "" ? alertThreshold(existing.minStock) : alertThreshold(catalog?.minStock);
-  const productId = existing?.productId || catalog?.id || crypto.randomUUID();
-  const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, { productName, unit: existing?.unit || unit, minStock, piecesPerBox });
+  if (existing) {
+    alert(t("clinicItemExists"));
+    return;
+  }
+  const productId = catalog?.id || crypto.randomUUID();
+  const added = await changeClinicStock(clinicId, productId, "", 0, {
+    productName,
+    unit,
+    piecesPerBox,
+    minStock: catalog?.minStock,
+  });
   if (!added) return;
-  const row = (state.clinicStock || []).find(
-    (item) => item.clinicId === clinicId && String(item.productId) === String(productId) && (item.expiryDate || "") === expiryDate
-  );
+  const row = clinicAssignedRows(clinicId).find((item) => String(item.productId) === String(productId) && !(item.expiryDate || ""));
   if (row) {
     row.productName = productName;
     row.unit = unit;
-    row.minStock = minStock;
+    row.piecesPerBox = piecesPerBox;
     const saved = await saveClinicStock(row);
-    if (saved?.row) Object.assign(row, saved.row, { productName, unit, quantity: row.quantity, expiryDate, piecesPerBox: saved.row.piecesPerBox === undefined ? row.piecesPerBox : saved.row.piecesPerBox, minStock: saved.row.minStock === undefined ? minStock : saved.row.minStock });
-    if (saved?.minStockSkipped) alert(t("minStockNeedSql"));
+    if (saved?.row) Object.assign(row, saved.row, { productName, unit, quantity: row.quantity, piecesPerBox });
     if (saved?.packSkipped) alert(t("packNeedSql"));
   }
-  await recordActivity("clinic_stock_add", `${clinicName(clinicId)} — ${productName} — ${quantity}`);
+  await recordActivity("clinic_stock_add", `${clinicName(clinicId)} — ${productName}`);
   form.reset();
+  persist();
+}
+
+async function saveStaffClinicQty(id) {
+  if (!isStaff() || !sessionClinic()) return;
+  const row = clinicAssignedRows(sessionClinic()).find((item) => String(item.id) === String(id));
+  const tr = document.querySelector(`[data-save-clinic-qty="${CSS.escape(String(id))}"]`)?.closest("tr");
+  if (!row || !tr) return;
+  const quantity = pieceCount(tr.querySelector("[data-boxes-input]")?.value, rowPack(row));
+  if (!Number.isFinite(quantity) || quantity < 0) return;
+  const previous = Number(row.quantity) || 0;
+  row.quantity = quantity;
+  const saved = await saveClinicStock(row);
+  if (saved?.error) {
+    row.quantity = previous;
+    notifyDbError(saved.error);
+    return;
+  }
+  if (saved?.row) Object.assign(row, saved.row, { quantity, piecesPerBox: saved.row.piecesPerBox === undefined ? row.piecesPerBox : saved.row.piecesPerBox });
+  await recordActivity("clinic_stock_add", `${clinicName(sessionClinic())} — ${row.productName} — ${quantity}`);
   persist();
 }
 
@@ -4031,6 +4110,7 @@ function renderAll() {
   renderArchive();
   renderRequests();
   renderClinicStock();
+  renderClinicItemList();
   renderExternalSupplies();
   renderCleaning();
   renderCleaningWithdrawals();
@@ -4557,20 +4637,32 @@ document.getElementById("page-requests").addEventListener("submit", async (e) =>
 
 document.getElementById("page-clinic-stock").addEventListener("submit", async (e) => {
   const dispense = e.target.closest("[data-dispense-form]");
-  if (dispense) {
-    e.preventDefault();
-    await submitDispense(dispense);
-    return;
-  }
-  if (e.target.id !== "clinic-stock-form") return;
+  if (!dispense) return;
   e.preventDefault();
-  await addClinicStockItem(e.target);
+  await submitDispense(dispense);
+});
+
+document.getElementById("page-clinic-list").addEventListener("submit", async (e) => {
+  if (e.target.id !== "clinic-list-form") return;
+  e.preventDefault();
+  await assignClinicItem(e.target);
+});
+
+document.getElementById("page-clinic-list").addEventListener("click", async (e) => {
+  const button = e.target.closest("[data-del-clinic]");
+  if (!button) return;
+  await removeClinicStock(button.dataset.delClinic);
 });
 
 document.getElementById("page-clinic-stock").addEventListener("click", async (e) => {
   const printBtn = e.target.closest("[data-print-clinic]");
   if (printBtn) {
     printClinicStock(printBtn.dataset.printClinic);
+    return;
+  }
+  const qtyBtn = e.target.closest("[data-save-clinic-qty]");
+  if (qtyBtn) {
+    await saveStaffClinicQty(qtyBtn.dataset.saveClinicQty);
     return;
   }
   const button = e.target.closest("[data-del-clinic]");
