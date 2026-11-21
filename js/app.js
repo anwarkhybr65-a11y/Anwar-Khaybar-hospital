@@ -40,7 +40,7 @@ import {
 
 const KEY = "anwar-khaybar-procurement";
 
-const DEFAULT_LOW_STOCK = 6;
+const DEFAULT_LOW_STOCK = 2;
 
 const CLINICS = [
   { id: "ahmed", ar: "عيادة دكتور أحمد", en: "Dr. Ahmed clinic", letter: "أ", color: "#0d6e6e", warehouses: ["dental", "general"] },
@@ -2678,12 +2678,7 @@ function catalogPrice(productId) {
 
 function clinicAlertLimit(row) {
   if (row?.minStock != null && row.minStock !== "") return alertThreshold(row.minStock);
-  const linked = (state.supplyItems || []).find(
-    (item) =>
-      isDental(item) &&
-      (String(item.id) === String(row?.productId) || String(item.sourceId) === String(row?.productId) || itemNameKey(item.itemName) === itemNameKey(row?.productName))
-  );
-  return alertThreshold(linked?.minStock);
+  return DEFAULT_LOW_STOCK;
 }
 
 function clinicAlertLines(row) {
@@ -3045,7 +3040,7 @@ async function assignClinicItem(form) {
     productName,
     unit,
     piecesPerBox,
-    minStock: catalog?.minStock,
+    minStock: DEFAULT_LOW_STOCK,
   });
   if (!added) return;
   const row = clinicAssignedRows(clinicId).find((item) => String(item.productId) === String(productId) && !(item.expiryDate || ""));
@@ -3282,12 +3277,7 @@ async function changeClinicStock(clinicId, productId, expiryDate, delta, meta) {
     if (linkedPack?.piecesPerBox) row.piecesPerBox = packSize(linkedPack.piecesPerBox);
   }
   if (meta?.minStock != null && meta.minStock !== "") row.minStock = alertThreshold(meta.minStock);
-  else if (row.minStock == null || row.minStock === "") {
-    const linked = (state.supplyItems || []).find(
-      (item) => isDental(item) && (String(item.id) === String(productId) || String(item.sourceId) === String(productId))
-    );
-    row.minStock = alertThreshold(linked?.minStock);
-  }
+  else if (row.minStock == null || row.minStock === "") row.minStock = DEFAULT_LOW_STOCK;
   const previous = Number(row.quantity) || 0;
   const next = previous + delta;
   if (next < 0) return false;
@@ -5086,6 +5076,32 @@ async function overlayInventoryTables(result) {
   await overlayCategory(result.emergencySupplies, true);
 }
 
+async function applyClinicDefaultThreshold() {
+  const rows = (state.clinicStock || []).filter((row) => alertThreshold(row.minStock) !== DEFAULT_LOW_STOCK);
+  for (const row of rows) {
+    const previous = row.minStock;
+    row.minStock = DEFAULT_LOW_STOCK;
+    const saved = await saveClinicStock(row);
+    if (saved?.error) {
+      row.minStock = previous;
+      notifyDbError(saved.error);
+      return;
+    }
+    if (saved?.minStockSkipped) {
+      row.minStock = previous;
+      alert(t("minStockNeedSql"));
+      return;
+    }
+    if (saved?.row) {
+      Object.assign(row, saved.row, {
+        minStock: DEFAULT_LOW_STOCK,
+        quantity: row.quantity,
+        piecesPerBox: saved.row.piecesPerBox === undefined ? row.piecesPerBox : saved.row.piecesPerBox,
+      });
+    }
+  }
+}
+
 async function hydrateFromDatabase() {
   const result = await loadProcurementData();
   if (!result.connection.ok) throw new Error(result.error || result.connection.message);
@@ -5107,6 +5123,7 @@ async function hydrateFromDatabase() {
   state.clinicNames = clinicNames;
   state.requests = cloudList(result.supplyRequests);
   state.clinicStock = cloudList(result.clinicInventory);
+  await applyClinicDefaultThreshold();
   state.externalSupplies = cloudList(result.externalSupplies);
   state.activityLog = cloudList(result.activityLog);
   state.cleaningItems = cloudList(result.cleaningInventory);

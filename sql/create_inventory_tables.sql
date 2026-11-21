@@ -28,7 +28,7 @@ create table if not exists public.dental_warehouse (
   price numeric not null default 0,
   actual_price numeric,
   stock numeric,
-  min_stock integer not null default 6,
+  min_stock integer not null default 2,
   expiry_date date,
   damaged boolean not null default false,
   source_id text,

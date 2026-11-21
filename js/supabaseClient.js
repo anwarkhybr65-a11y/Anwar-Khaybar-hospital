@@ -268,7 +268,7 @@ function dentalPayload(item, suppliers = []) {
   }
   if (dentalMinStockReady) {
     const minStock = Math.floor(Number(item.minStock));
-    payload.min_stock = Number.isFinite(minStock) && minStock >= 0 ? minStock : 6;
+    payload.min_stock = Number.isFinite(minStock) && minStock >= 0 ? minStock : 2;
   }
   if (dentalActualReady) payload.actual_price = storedActualPrice(item);
   if (dentalPackReady) {
