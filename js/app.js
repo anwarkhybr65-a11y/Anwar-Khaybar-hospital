@@ -2789,8 +2789,8 @@ function renderClinicStock() {
   if (title) title.textContent = t("clinicStocks");
   const printAll = `<div class="toolbar" style="margin-bottom:12px"><button class="btn btn-navy" type="button" data-print-clinic="all">${t("print")} ${t("clinicStocks")}</button></div>`;
   panel.innerHTML = printAll + CLINICS.map((clinic) => {
-    const rows = clinicRows(clinic.id);
-    const alerts = rows.flatMap(clinicAlertLines);
+    const rows = clinicAssignedRows(clinic.id);
+    const alerts = clinicRows(clinic.id).flatMap(clinicAlertLines);
     return `<div class="card table-wrap">
       <h3>${escapeAttr(clinicName(clinic.id))}</h3>
       <p><button class="btn btn-sm btn-navy" type="button" data-print-clinic="${escapeAttr(clinic.id)}">${t("print")}</button></p>
@@ -2835,7 +2835,7 @@ function printClinicStock(clinicId) {
   const clinics = clinicId && clinicId !== "all" ? CLINICS.filter((clinic) => clinic.id === clinicId) : CLINICS;
   const inner = clinics
     .map((clinic) => {
-      const rows = clinicRows(clinic.id);
+      const rows = clinicAssignedRows(clinic.id);
       const body = rows.length ? clinicTable(rows) : `<p>${t("noData")}</p>`;
       return `<h2>${escapeAttr(clinicName(clinic.id))}</h2>${body}`;
     })
