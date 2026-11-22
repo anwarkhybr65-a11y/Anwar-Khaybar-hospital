@@ -2733,14 +2733,13 @@ function renderStaffAlerts() {
 }
 
 function staffClinicQtyTable(rows) {
-  const headers = [t("itemName"), t("unitSize"), t("piecesPerBox"), t("boxQty"), t("pieceQty"), t("quantity"), t("expiryDate"), t("daysLeft"), ""];
+  const headers = [t("itemName"), t("unitSize"), t("boxQty"), t("pieceQty"), t("quantity"), t("expiryDate"), t("daysLeft"), ""];
   const body = rows.map((row) => {
     const pack = rowPack(row);
     const boxes = splitPieces(row.quantity, pack).boxes;
     return `<tr>
       <td>${escapeAttr(row.productName)}</td>
       <td>${escapeAttr(row.unit)}</td>
-      <td>${pack}</td>
       <td>
         <input data-pack-input type="hidden" value="${pack}" />
         <input data-boxes-input type="number" min="0" step="1" value="${boxes}" />
