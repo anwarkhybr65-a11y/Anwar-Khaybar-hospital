@@ -100,8 +100,8 @@ const LOGIN_PLACES = [
 const I18N = {
   ar: {
     hospitalName: "مستشفى أنوار خيبر",
-    sidebarTitle: "متابعة الموردين ومسحوبات عيادات الأسنان",
-    loginSubtitle: "متابعة الموردين ومسحوبات العيادات",
+    sidebarTitle: "متابعة المخزون و طلبات العيادات",
+    loginSubtitle: "متابعة المخزون و طلبات العيادات",
     chooseAccount: "اختر الحساب",
     username: "اسم المستخدم",
     selectClinic: "اختر العيادة",
@@ -411,8 +411,8 @@ const I18N = {
   },
   en: {
     hospitalName: "Anwar Khaybar Hospital",
-    sidebarTitle: "Suppliers and dental clinic withdrawals",
-    loginSubtitle: "Suppliers and clinic withdrawals tracking",
+    sidebarTitle: "Inventory and clinic requests",
+    loginSubtitle: "Inventory and clinic requests",
     chooseAccount: "Choose an account",
     username: "Username",
     selectClinic: "Choose a clinic",
