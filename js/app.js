@@ -343,7 +343,7 @@ const I18N = {
     clinicItemListHint: "اكتب الصنف ثم اختر العيادة. بعد الإضافة لا يستطيع الطاقم إلا تحديد الكمية بالعلبة أو الحبة وتاريخ الصلاحية.",
     assignClinic: "إضافة للعيادة",
     clinicItemExists: "هذا الصنف مضاف لهذه العيادة مسبقاً.",
-    staffQtyHint: "حدد الكمية بالعلب وتاريخ الصلاحية. الحبات تُحسب تلقائياً، ولا يمكن إضافة صنف جديد من هنا.",
+    staffQtyHint: "أضف الصنف الموجود في العيادة، ثم حدد الكمية وتاريخ الصلاحية.",
     staffNoClinicItems: "لم تُضف أصناف لهذه العيادة بعد. الإضافة من حساب المسؤول أو النائب.",
     externalRequests: "طلبات خارجية",
     externalSupplies: "المستلزمات الخارجية",
@@ -654,7 +654,7 @@ const I18N = {
     clinicItemListHint: "Write the item, choose the clinic, then add it. Clinic staff can only set the quantity in boxes or pieces and the expiry date.",
     assignClinic: "Add to clinic",
     clinicItemExists: "This item is already assigned to that clinic.",
-    staffQtyHint: "Set the quantity in boxes and the expiry date. Pieces are calculated automatically, and new items cannot be added here.",
+    staffQtyHint: "Add an item already in the clinic, then set the quantity and the expiry date.",
     staffNoClinicItems: "No items have been assigned to this clinic yet. An admin or deputy adds them.",
     externalRequests: "External requests",
     externalSupplies: "External supplies",
@@ -2780,7 +2780,17 @@ function renderClinicStock() {
     const list = rows.length ? staffClinicQtyTable(rows) : `<p class="empty">${t("staffNoClinicItems")}</p>`;
     panel.innerHTML = `
       ${alerts.map((line) => `<div class="clinic-alert">${escapeAttr(line)}</div>`).join("")}
-      <p class="empty">${t("staffQtyHint")}</p>
+      <div class="card">
+        <h3>${t("addClinicItem")}</h3>
+        <p class="empty">${t("staffQtyHint")}</p>
+        <form class="form-grid" id="clinic-stock-form">
+          <div><label>${t("itemName")}</label><input name="itemName" required /></div>
+          <div><label>${t("unitSize")}</label><input name="unit" required /></div>
+          <div><label>${t("boxQty")}</label><input name="boxes" type="number" min="0" step="1" value="0" /></div>
+          <div><label>${t("expiryDate")}</label><input name="expiryDate" type="date" /></div>
+          <div class="full"><button class="btn btn-primary" type="submit">${t("saveItem")}</button></div>
+        </form>
+      </div>
       <div class="card table-wrap"><h3>${escapeAttr(clinicName(sessionClinic()))}</h3>${dispenseForm(sessionClinic())}${list}</div>`;
     renderStaffAlerts();
     return;
@@ -3016,6 +3026,53 @@ async function createDepartmentAccounts() {
   }
   const box = document.getElementById("user-admin-result");
   if (box) box.innerHTML = `<div class="card"><h3>${t("newAccount")}</h3>${lines.join("")}<p>${t("passwordOnce")}</p></div>`;
+}
+
+async function addStaffClinicItem(form) {
+  if (!isStaff() || !sessionClinic()) return;
+  const data = new FormData(form);
+  const clinicId = sessionClinic();
+  const productName = String(data.get("itemName") || "").trim();
+  const unit = String(data.get("unit") || "").trim();
+  const expiryDate = String(data.get("expiryDate") || "");
+  if (!productName || !unit) return;
+  const catalog = (state.supplyItems || []).find((item) => itemNameKey(item.itemName) === itemNameKey(productName));
+  const piecesPerBox = packSize(catalog?.piecesPerBox);
+  const quantity = pieceCount(data.get("boxes"), piecesPerBox);
+  const existing = clinicAssignedRows(clinicId).find((row) =>
+    itemNameKey(row.productName) === itemNameKey(productName) || (catalog && String(row.productId) === String(catalog.id))
+  );
+  if (existing) {
+    alert(t("clinicItemExists"));
+    return;
+  }
+  const productId = catalog?.id || crypto.randomUUID();
+  const added = await changeClinicStock(clinicId, productId, expiryDate, quantity, {
+    productName,
+    unit,
+    piecesPerBox,
+    minStock: DEFAULT_LOW_STOCK,
+  });
+  if (!added) return;
+  const row = clinicAssignedRows(clinicId).find((item) => String(item.productId) === String(productId) && (item.expiryDate || "") === expiryDate);
+  if (row) {
+    row.productName = productName;
+    row.unit = unit;
+    row.piecesPerBox = piecesPerBox;
+    row.expiryDate = expiryDate;
+    const saved = await saveClinicStock(row);
+    if (saved?.row) Object.assign(row, saved.row, {
+      productName,
+      unit,
+      quantity: row.quantity,
+      piecesPerBox,
+      expiryDate: saved.row.expiryDate === undefined ? expiryDate : saved.row.expiryDate,
+    });
+    if (saved?.packSkipped) alert(t("packNeedSql"));
+  }
+  await recordActivity("clinic_stock_add", `${clinicName(clinicId)} — ${productName} — ${quantity}`);
+  form.reset();
+  persist();
 }
 
 async function assignClinicItem(form) {
@@ -4636,9 +4693,14 @@ document.getElementById("page-requests").addEventListener("submit", async (e) =>
 
 document.getElementById("page-clinic-stock").addEventListener("submit", async (e) => {
   const dispense = e.target.closest("[data-dispense-form]");
-  if (!dispense) return;
+  if (dispense) {
+    e.preventDefault();
+    await submitDispense(dispense);
+    return;
+  }
+  if (e.target.id !== "clinic-stock-form") return;
   e.preventDefault();
-  await submitDispense(dispense);
+  await addStaffClinicItem(e.target);
 });
 
 document.getElementById("page-clinic-list").addEventListener("submit", async (e) => {
